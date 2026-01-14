@@ -3,6 +3,7 @@
 import pandas as pd
 from app.database import get_connection, date_subtract_days, date_format_convert
 from app.repositories import faltantes_repository as repo
+from app.utils.text import _norm
 
 
 def get_faltantes(dias=90):

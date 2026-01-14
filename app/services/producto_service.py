@@ -3,6 +3,7 @@
 import pandas as pd
 from app.database import get_connection
 from app.repositories import producto_repository as repo
+from app.utils.text import _norm
 
 
 def get_consulta_producto(codigo_barras):

@@ -12,6 +12,7 @@ from app.repositories.analisis_marca_repository import (
 )
 
 from app.database import DATA_DIR
+from app.utils.text import _norm
 
 def get_analisis_marca(marca: str) -> dict:
     """

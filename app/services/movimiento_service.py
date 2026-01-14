@@ -2,6 +2,7 @@
 
 from app.database import get_connection, date_subtract_days, date_format_convert
 from app.repositories import movimiento_repository as repo
+from app.utils.text import _norm
 
 def get_movimiento(dias=30):
     fecha_desde = date_subtract_days(dias)
