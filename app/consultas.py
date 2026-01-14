@@ -7,6 +7,7 @@ import unicodedata
 from datetime import datetime, timedelta
 from app.services.analisis_marca_service import get_analisis_marca
 from app.services.producto_service import get_consulta_producto
+from app.services.existencias_service import get_existencias_por_tienda
 from app.database import (
     get_connection,
     date_subtract_days,
@@ -483,23 +484,6 @@ def get_redistribucion_regional(dias=30, ventas_min=1, tienda_origen=None):
     return final
 
 #------------------------------------------------------ OTRAS FUNCIONES ------------------------------------------------------
-
-def get_existencias_por_tienda():
-    query = """
-    SELECT 
-        t.clean_name AS tienda,
-        s.c_barra,
-        s.d_marca,
-        s.saldo_disponible AS stock_actual,
-        t.region,
-        t.tipo_tienda,
-        t.fija
-    FROM ventas_saldos_raw s
-    LEFT JOIN config_tiendas t ON s.d_almacen = t.raw_name
-    ORDER BY t.clean_name, s.d_marca;
-    """
-    with get_connection() as conn:
-        return pd.read_sql(query, conn)
 
 def get_movimiento(dias=30):
 
