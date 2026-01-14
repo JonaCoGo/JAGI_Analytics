@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import unicodedata
 from datetime import datetime, timedelta
+from app.services.analisis_marca_service import get_analisis_marca
 from app.database import (
     get_connection,
     date_subtract_days,
@@ -876,90 +877,3 @@ def get_consulta_producto(codigo_barras):
                 "estado": estado
             }
         }
-
-def get_analisis_marca(marca):
-    db_path = os.path.join(DATA_DIR, "jagi_mahalo.db")
-    conn = sqlite3.connect(db_path)
-    
-    try:
-        marca_norm = marca.upper().strip()
-        
-        # 1. TOP 10 (Tu lógica original de fechas)
-        query_top10 = f"""
-        SELECT 
-            s.c_barra, s.d_marca, s.d_color_proveedor as color,
-            SUM(h.cn_venta) as ventas_30d
-        FROM ventas_saldos_raw s
-        INNER JOIN ventas_historico_raw h ON s.c_barra = h.c_barra
-        WHERE UPPER(s.d_marca) LIKE ?
-          AND DATE(substr(h.f_sistema,7,4)||'-'||substr(h.f_sistema,4,2)||'-'||substr(h.f_sistema,1,2)) >= DATE('now', '-30 days')
-        GROUP BY s.c_barra, s.d_marca, s.d_color_proveedor
-        ORDER BY ventas_30d DESC LIMIT 10
-        """
-        df_top10 = pd.read_sql(query_top10, conn, params=(f"%{marca_norm}%",))
-        
-        if df_top10.empty:
-            # Si no hay ventas, traemos 10 productos al azar de la marca
-            df_top10 = pd.read_sql("SELECT DISTINCT c_barra, d_marca, d_color_proveedor as color, 0 as ventas_30d FROM ventas_saldos_raw WHERE UPPER(d_marca) LIKE ? LIMIT 10", conn, params=(f"%{marca_norm}%",))
-
-        # 2. Tiendas Configuradas
-        df_tiendas_conf = pd.read_sql("SELECT raw_name, clean_name, region FROM config_tiendas WHERE clean_name NOT LIKE '%BODEGA%'", conn)
-        tiendas_dict = df_tiendas_conf.set_index('raw_name')['clean_name'].to_dict()
-        regiones_dict = df_tiendas_conf.set_index('clean_name')['region'].to_dict()
-
-        top10_detalles = []
-        tiendas_con_top10 = set()
-
-        # 3. Detalles por producto
-        for _, fila in df_top10.iterrows():
-            barra = str(fila['c_barra'])
-            
-            # Stock actual
-            df_s = pd.read_sql("SELECT d_almacen, saldo_disponible FROM ventas_saldos_raw WHERE c_barra = ?", conn, params=(barra,))
-            
-            # Tiendas que lo tienen (usando el nombre limpio)
-            t_con = [tiendas_dict[r] for r in df_s[df_s['saldo_disponible'] > 0]['d_almacen'] if r in tiendas_dict]
-            tiendas_con_top10.update(t_con)
-            
-            t_sin = [name for name in tiendas_dict.values() if name not in t_con]
-
-            top10_detalles.append({
-                "c_barra": barra,
-                "color": str(fila['color']) if pd.notna(fila['color']) else "N/A",
-                "ventas_30d": int(fila['ventas_30d']),
-                "tiendas_con_producto": t_con,
-                "tiendas_sin_producto": t_sin,
-                "stock_total": int(df_s['saldo_disponible'].sum()),
-                "potencial_faltante": len(t_sin)
-            })
-
-        # 4. Análisis por Tienda (Lo que pide tu app.js en la segunda pestaña)
-        analisis_tiendas = []
-        for t_clean in tiendas_dict.values():
-            t_con = [p for p in top10_detalles if t_clean in p['tiendas_con_producto']]
-            t_sin = [p for p in top10_detalles if t_clean not in p['tiendas_con_producto']]
-            
-            analisis_tiendas.append({
-                "tienda": t_clean,
-                "region": regiones_dict.get(t_clean, "N/A"),
-                "productos_top10": len(t_con),
-                "productos_faltantes": len(t_sin),
-                "ventas_top10": sum(p['ventas_30d'] for p in t_con),
-                "stock_top10": 0 # Opcional
-            })
-
-        # 5. Respuesta final con la estructura EXACTA de tu app.js
-        return {
-            "marca": marca,
-            "resumen": {
-                "total_productos": len(top10_detalles),
-                "tiendas_totales": len(tiendas_dict),
-                "tiendas_con_top10": len(tiendas_con_top10),
-                "oportunidades_redistribucion": sum(p['potencial_faltante'] for p in top10_detalles)
-            },
-            "top10": top10_detalles,
-            "tiendas": analisis_tiendas,
-            "recomendaciones": [f"Se detectaron {len(tiendas_con_top10)} tiendas con el top 10."]
-        }
-    finally:
-        conn.close()
