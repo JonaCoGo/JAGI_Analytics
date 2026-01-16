@@ -124,9 +124,9 @@ Este proyecto es de uso educativo y profesional.
 
 ## 👨‍💻 Autor
 
-**Jonathan Cortés**  
-Técnico en Programación de Aplicaciones - SENA  
-[GitHub](https://github.com/JonaCoGo) | [LinkedIn](#)
+**Jonatan Corrales Gómez**  
+Técnico en Programación de Aplicaciones y Servicios para la Nube - SENA  
+[GitHub](https://github.com/JonaCoGo) | [LinkedIn](www.linkedin.com/in/jonatancorralesgomez)
 
 ---
 
