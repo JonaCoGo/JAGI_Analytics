@@ -3,18 +3,32 @@
 # ======================
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
+*$py.class
+*.so
 .Python
-venv/
-env/
-.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
 # ======================
-# Entorno y secretos
+# Entorno virtual
 # ======================
-.env
-*.env
+venv/
+env/
+ENV/
+.venv/
 
 # ======================
 # Bases de datos
@@ -22,13 +36,15 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+jagi_mahalo.db
 
 # ======================
-# Pytest / Testing
+# Archivos de datos
 # ======================
-.pytest_cache/
-.coverage
-htmlcov/
+data/
+*.csv
+*.xlsx
+*.xls
 
 # ======================
 # Logs
@@ -36,13 +52,39 @@ htmlcov/
 *.log
 
 # ======================
-# IDEs / Editores
+# Testing
+# ======================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ======================
+# IDEs
 # ======================
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # ======================
-# Sistema
+# Sistema operativo
 # ======================
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# ======================
+# Configuración sensible
+# ======================
+.env
+*.env
+secrets.json
+
+# ======================
+# Reportes generados
+# ======================
+*.xlsx
+*.pdf
+reports/
