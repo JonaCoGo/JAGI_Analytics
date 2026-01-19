@@ -159,30 +159,58 @@ async def obtener_opciones_regiones():
 # ===== CARGAR CSV =====
 @app.post("/cargar-csv")
 async def cargar_csv_files(files: List[UploadFile] = File(...)):
+    # ✅ VALIDACIÓN 1: Cantidad exacta
+    if len(files) != 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Se esperan 3 archivos, se recibieron {len(files)}"
+        )
+    
+    # ✅ VALIDACIÓN 2: Extensión
+    for file in files:
+        if not file.filename.endswith('.csv'):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Archivo '{file.filename}' no es CSV"
+            )
+    
     try:
-        # 1. Definimos la ruta de destino (data/inputs) usando DATA_DIR de database.py
+        # 1. Definir ruta de destino
         inputs_dir = os.path.join(DATA_DIR, "inputs")
         os.makedirs(inputs_dir, exist_ok=True)
 
-        # Nombres exactos que espera tu lógica de negocio
-        expected_files = ["1.Ventas-Saldos.csv", "2.Inventario-Bodega.csv", "3.Ventas-Historico.csv"]
+        # Nombres exactos esperados
+        expected_files = [
+            "1.Ventas-Saldos.csv", 
+            "2.Inventario-Bodega.csv", 
+            "3.Ventas-Historico.csv"
+        ]
 
-        # 2. Guardamos los archivos ÚNICAMENTE en la carpeta de datos
+        # 2. Guardar archivos con nombres correctos
         for i, file in enumerate(files):
-            if i < len(expected_files):
-                file_path = os.path.join(inputs_dir, expected_files[i])
-                with open(file_path, "wb") as buffer:
-                    shutil.copyfileobj(file.file, buffer)
-                logging.info(f"✅ Archivo guardado en: {file_path}")
+            file_path = os.path.join(inputs_dir, expected_files[i])
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            logging.info(f"✅ Archivo guardado: {file_path}")
 
-        # 3. Llamamos a tu función de carga que ya sabe leer de esa carpeta
+        # 3. Cargar datos a la BD
         resetear_y_cargar()
 
-        return {"message": "Datos cargados exitosamente", "archivos": len(files)}
+        return {
+            "message": "Datos cargados exitosamente", 
+            "archivos": len(files)
+        }
     
+    except HTTPException:
+        # Re-lanzar errores de validación
+        raise
     except Exception as e:
-        logging.error(f"Error en carga de CSV: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Capturar errores inesperados
+        logging.error(f"❌ Error en carga de CSV: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Error al procesar archivos: {str(e)}"
+        )
 
 # ===== ACTUALIZAR INVENTARIO =====
 @app.post("/actualizar-inventario")
