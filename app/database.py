@@ -5,71 +5,63 @@ Capa de abstracción para conexiones a base de datos.
 Soporta SQLite (desarrollo) y PostgreSQL (producción).
 """
 
-import os
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
-from dotenv import load_dotenv
 import logging
 
-# Cargar variables de entorno
-load_dotenv()
+# Importar configuración validada
+from app.config import settings
 
 # Configuración de logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=getattr(logging, settings.app.log_level))
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# CONFIGURACIÓN DE RUTA Y BASE DE DATOS
+# CONFIGURACIÓN DE BASE DE DATOS
 # ==========================================
 
-# Obtiene la ruta absoluta de la carpeta donde está este archivo (app/)
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Define la ruta de la carpeta de datos (un nivel arriba, luego 'data')
-DATA_DIR = os.path.join(os.path.dirname(BASE_DIR), "data")
-# Asegura que la carpeta data exista
-os.makedirs(DATA_DIR, exist_ok=True)
+# Usar la configuración validada
+DATABASE_URL = settings.database.get_database_url()
+DB_TYPE = settings.database.type
 
-# Tipo de BD (sqlite o postgresql)
-DB_TYPE = os.getenv("DB_TYPE", "sqlite").lower()
+# ==========================================
+# CREAR ENGINE SEGÚN TIPO DE BD
+# ==========================================
 
-# Configuración según tipo de BD
 if DB_TYPE == "postgresql":
-    # PostgreSQL en producción
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = os.getenv("DB_PORT", "5432")
-    DB_NAME = os.getenv("DB_NAME", "jagi_mahalo")
-    DB_USER = os.getenv("DB_USER", "postgres")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
-    
-    DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-    
-    # Engine con pool de conexiones
     engine = create_engine(
         DATABASE_URL,
         pool_size=10,
         max_overflow=20,
-        pool_pre_ping=True,  # Verifica conexiones antes de usarlas
-        echo=False  # Cambiar a True para debug SQL
+        pool_pre_ping=True,
+        echo=settings.app.debug,  # Solo mostrar SQL en modo debug
     )
-    
-    logger.info(f"🐘 Conectado a PostgreSQL: {DB_HOST}:{DB_PORT}/{DB_NAME}")
+    logger.info(f"🐘 Conectado a PostgreSQL: {settings.database.host}:{settings.database.port}/{settings.database.name}")
 
-else:
-    # SQLite en desarrollo (modo actual)
-    DB_NAME = "jagi_mahalo.db"
-    DB_PATH = os.path.join(DATA_DIR, DB_NAME)
+else:  # SQLite
+    # Construir ruta absoluta
+    import os
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    DATA_DIR = os.path.join(BASE_DIR, "data")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    DB_PATH = os.path.join(DATA_DIR, settings.database.path.split('/')[-1])
+    
+    # Actualizar URL con ruta absoluta
     DATABASE_URL = f"sqlite:///{DB_PATH}"
     
-    # Engine con configuración especial para SQLite
     engine = create_engine(
         DATABASE_URL,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
-        echo=False
+        echo=settings.app.debug,
     )
-    
     logger.info(f"📦 Conectado a SQLite: {DB_PATH}")
+
+# Exportar para uso en otros módulos
+DB_NAME = settings.database.name or "jagi_mahalo.db"
+DATA_DIR = DATA_DIR if DB_TYPE == "sqlite" else None
+DB_PATH = DB_PATH if DB_TYPE == "sqlite" else None
 
 # ==========================================
 # SESIONES Y BASE DECLARATIVA
@@ -83,14 +75,7 @@ Base = declarative_base()
 # ==========================================
 
 def get_db():
-    """
-    Generador de sesiones para dependency injection en FastAPI.
-    
-    Uso en endpoints:
-    @app.get("/")
-    def endpoint(db: Session = Depends(get_db)):
-        ...
-    """
+    """Generador de sesiones para FastAPI dependency injection."""
     db = SessionLocal()
     try:
         yield db
@@ -99,22 +84,12 @@ def get_db():
 
 
 def get_connection():
-    """
-    Obtiene una conexión raw para pandas.read_sql().
-    Compatible con SQLite y PostgreSQL.
-    
-    Uso:
-    with get_connection() as conn:
-        df = pd.read_sql(query, conn)
-    """
+    """Obtiene una conexión raw para pandas.read_sql()."""
     return engine.connect()
 
 
 def test_connection():
-    """
-    Prueba la conexión a la base de datos.
-    Retorna True si exitoso, False si falla.
-    """
+    """Prueba la conexión a la base de datos."""
     try:
         with engine.connect() as conn:
             if DB_TYPE == "postgresql":
@@ -128,26 +103,21 @@ def test_connection():
         logger.error(f"❌ Error de conexión: {e}")
         return False
 
+
 def get_db_info():
-    """
-    Retorna información sobre la base de datos actual.
-    """
-    return {"type": DB_TYPE, "url": DATABASE_URL, "engine": str(engine)}
+    """Retorna información sobre la base de datos actual."""
+    return {
+        "type": DB_TYPE,
+        "url": DATABASE_URL.replace(settings.database.password or "", "***") if settings.database.password else DATABASE_URL,
+        "environment": settings.app.environment,
+    }
 
 # ==========================================
 # HELPERS PARA QUERIES COMPATIBLES
 # ==========================================
 
 def date_subtract_days(days: int) -> str:
-    """
-    Genera SQL compatible para restar días de la fecha actual.
-    
-    Args:
-        days: Número de días a restar
-    
-    Returns:
-        String SQL compatible con SQLite y PostgreSQL
-    """
+    """Genera SQL compatible para restar días de la fecha actual."""
     if DB_TYPE == "postgresql":
         return f"CURRENT_DATE - INTERVAL '{days} days'"
     else:
@@ -155,36 +125,23 @@ def date_subtract_days(days: int) -> str:
 
 
 def date_format_convert(column: str, sqlite_format: str = "DD/MM/YYYY") -> str:
-    """
-    Convierte formato de fecha según el tipo de BD.
-    
-    Args:
-        column: Nombre de la columna de fecha
-        sqlite_format: Formato en SQLite (ej: "DD/MM/YYYY")
-    
-    Returns:
-        String SQL para conversión de fecha
-    """
+    """Convierte formato de fecha según el tipo de BD."""
     if DB_TYPE == "postgresql":
-        # PostgreSQL usa TO_DATE
         pg_format = sqlite_format.replace("YYYY", "YYYY").replace("MM", "MM").replace("DD", "DD")
         return f"TO_DATE({column}, '{pg_format}')"
     else:
-        # SQLite usa substr + concatenación
         if sqlite_format == "DD/MM/YYYY":
             return f"DATE(substr({column},7,4)||'-'||substr({column},4,2)||'-'||substr({column},1,2))"
         else:
             return f"DATE({column})"
 
+
 def current_date() -> str:
-    """
-    Retorna SQL para fecha actual según BD.
-    """
+    """Retorna SQL para fecha actual según BD."""
     if DB_TYPE == "postgresql":
         return "CURRENT_DATE"
     else:
         return "DATE('now')"
-
 
 # ==========================================
 # INICIALIZACIÓN
