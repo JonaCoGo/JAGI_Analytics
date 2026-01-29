@@ -1,11 +1,97 @@
-fastapi==0.104.1
-uvicorn==0.24.0
-python-multipart==0.0.6
-pandas==2.1.3
-openpyxl==3.1.2
-sqlalchemy==2.0.23
-psycopg2-binary==2.9.9
-python-dotenv==1.0.0
-pytest==9.0.2
-httpx==0.26.0
-starlette==0.27.0
+# requirements.txt
+# ==========================================
+# DEPENDENCIAS DEL PROYECTO JAGI ERP
+# ==========================================
+# 
+# Instalación:
+#   pip install -r requirements.txt
+#
+# Actualización:
+#   pip install --upgrade -r requirements.txt
+#
+# Generar desde entorno actual:
+#   pip freeze > requirements.txt
+#
+# ==========================================
+
+# ==========================================
+# CORE FRAMEWORK
+# ==========================================
+# FastAPI - Framework web moderno
+fastapi==0.115.5
+
+# Uvicorn - Servidor ASGI
+uvicorn[standard]==0.32.1
+
+# Starlette - Base de FastAPI
+starlette==0.41.3
+
+# Python Multipart - Manejo de archivos
+python-multipart==0.0.20
+
+# ==========================================
+# VALIDACIÓN Y CONFIGURACIÓN
+# ==========================================
+# Pydantic - Validación de datos (NUEVA)
+pydantic==2.10.4
+
+# Pydantic Settings - Configuración con validación
+pydantic-settings==2.7.0
+
+# Python Dotenv - Variables de entorno
+python-dotenv==1.0.1
+
+# ==========================================
+# BASE DE DATOS
+# ==========================================
+# SQLAlchemy - ORM y conexiones DB
+sqlalchemy==2.0.36
+
+# Psycopg2 - Driver PostgreSQL
+psycopg2-binary==2.9.10
+
+# ==========================================
+# PROCESAMIENTO DE DATOS
+# ==========================================
+# Pandas - Análisis de datos
+pandas==2.2.3
+
+# Numpy - Computación numérica (dependencia de Pandas)
+numpy==2.2.1
+
+# OpenPyXL - Lectura/escritura Excel
+openpyxl==3.1.5
+
+# ==========================================
+# TESTING
+# ==========================================
+# Pytest - Framework de testing
+pytest==8.3.4
+
+# Pytest-asyncio - Testing de código async
+pytest-asyncio==0.24.0
+
+# HTTPX - Cliente HTTP para testing
+httpx==0.28.1
+
+# Coverage - Cobertura de tests
+pytest-cov==6.0.0
+
+# ==========================================
+# DESARROLLO
+# ==========================================
+# Black - Formateador de código
+# black==24.10.0
+
+# Flake8 - Linter
+# flake8==7.1.1
+
+# MyPy - Type checker
+# mypy==1.13.0
+
+# ==========================================
+# NOTAS
+# ==========================================
+# Versiones actualizadas a: Enero 2026
+# Python requerido: 3.11+
+# ==========================================
