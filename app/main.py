@@ -7,6 +7,11 @@ from pydantic import BaseModel
 from typing import List, Optional
 from urllib.parse import unquote
 import os
+
+# Inicializar sistema de logging (debe ser lo primero)
+from app.logging_config import setup_logging
+setup_logging()
+
 import shutil
 import pandas as pd
 import logging

@@ -3,25 +3,26 @@
 """
 Capa de abstracción para conexiones a base de datos.
 Soporta SQLite (desarrollo) y PostgreSQL (producción).
+
+Actualizado: Ahora usa sistema de logging profesional.
 """
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 from sqlalchemy.pool import StaticPool
 import logging
+import os
 
 # Importar configuración validada
 from app.config import settings
 
-# Configuración de logging
-logging.basicConfig(level=getattr(logging, settings.app.log_level))
+# Obtener logger para este módulo
 logger = logging.getLogger(__name__)
 
 # ==========================================
 # CONFIGURACIÓN DE BASE DE DATOS
 # ==========================================
 
-# Usar la configuración validada
 DATABASE_URL = settings.database.get_database_url()
 DB_TYPE = settings.database.type
 
@@ -35,19 +36,20 @@ if DB_TYPE == "postgresql":
         pool_size=10,
         max_overflow=20,
         pool_pre_ping=True,
-        echo=settings.app.debug,  # Solo mostrar SQL en modo debug
+        echo=settings.app.debug,
     )
-    logger.info(f"🐘 Conectado a PostgreSQL: {settings.database.host}:{settings.database.port}/{settings.database.name}")
+    logger.info(
+        f"🐘 Conectado a PostgreSQL | "
+        f"Host: {settings.database.host}:{settings.database.port} | "
+        f"Database: {settings.database.name}"
+    )
 
 else:  # SQLite
-    # Construir ruta absoluta
-    import os
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     DATA_DIR = os.path.join(BASE_DIR, "data")
     os.makedirs(DATA_DIR, exist_ok=True)
     DB_PATH = os.path.join(DATA_DIR, settings.database.path.split('/')[-1])
     
-    # Actualizar URL con ruta absoluta
     DATABASE_URL = f"sqlite:///{DB_PATH}"
     
     engine = create_engine(
@@ -94,23 +96,34 @@ def test_connection():
         with engine.connect() as conn:
             if DB_TYPE == "postgresql":
                 result = conn.execute(text("SELECT version()"))
+                version = result.fetchone()[0]
+                logger.info(f"✅ PostgreSQL conectado | Versión: {version}")
             else:
                 result = conn.execute(text("SELECT sqlite_version()"))
+                version = result.fetchone()[0]
+                logger.info(f"✅ SQLite conectado | Versión: {version}")
             
-            logger.info(f"✅ Conexión exitosa: {result.fetchone()[0]}")
             return True
+            
     except Exception as e:
-        logger.error(f"❌ Error de conexión: {e}")
+        logger.error(f"❌ Error de conexión a base de datos: {str(e)}", exc_info=True)
         return False
 
 
 def get_db_info():
     """Retorna información sobre la base de datos actual."""
-    return {
+    masked_url = DATABASE_URL
+    if settings.database.password:
+        masked_url = DATABASE_URL.replace(settings.database.password, "***")
+    
+    info = {
         "type": DB_TYPE,
-        "url": DATABASE_URL.replace(settings.database.password or "", "***") if settings.database.password else DATABASE_URL,
+        "url": masked_url,
         "environment": settings.app.environment,
     }
+    
+    logger.debug(f"DB Info: {info}")
+    return info
 
 # ==========================================
 # HELPERS PARA QUERIES COMPATIBLES
@@ -147,6 +160,5 @@ def current_date() -> str:
 # INICIALIZACIÓN
 # ==========================================
 
-# Probar conexión al importar el módulo
 if __name__ != "__main__":
     test_connection()
