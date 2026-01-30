@@ -34,6 +34,22 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 
 app = FastAPI(title="JAGI ERP API")
 
+# Registrar exception handlers
+from app.middleware import (
+    base_app_exception_handler,
+    validation_exception_handler,
+    http_exception_handler,
+    general_exception_handler
+)
+from app.exceptions import BaseAppException
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+app.add_exception_handler(BaseAppException, base_app_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
+app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
@@ -1252,7 +1268,7 @@ async def analisis_marca_completo(marca: str):
         return JSONResponse({"success": True, "datos": resultado})
     except Exception as e:
         logging.error(f"Error en análisis de marca: {e}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ---------------------- MAIN ----------------------
 if __name__ == "__main__":
