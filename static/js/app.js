@@ -1964,7 +1964,7 @@ async function exportarNuevoReporteConColumnas() {
     try {
         showNotification(CONFIG.MESSAGES.generandoReporte, 'success');
         
-        const response = await fetch(`${CONFIG.API_URL}/reabastecimiento`, {
+        const response = await fetch(`${CONFIG.API_URL}/reabastecimiento/exportar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)
@@ -2630,7 +2630,7 @@ async function exportarConFiltrosAvanzados() {
             columnas_seleccionadas: estadoFiltros.columnasSeleccionadas
         };
         
-        const response = await fetch(`${CONFIG.API_URL}/reabastecimiento`, {
+        const response = await fetch(`${CONFIG.API_URL}/reabastecimiento/exportar`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(params)

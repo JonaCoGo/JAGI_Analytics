@@ -29,9 +29,11 @@ from app.cargar_csv import resetear_y_cargar
 from app.reports.excel_exporter import exportar_excel_formateado
 
 from app.schemas import (
+    ReabastecimientoMotorParams,
+    ReabastecimientoExportParams,
     ReabastecimientoCalculoRequest,
     ReabastecimientoResponse,
-    ReabastecimientoItem,
+    ReabastecimientoItem
 )
 
 # Configurar logging
@@ -46,6 +48,7 @@ from app.middleware import (
     http_exception_handler,
     general_exception_handler
 )
+
 from app.exceptions import BaseAppException
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -68,27 +71,6 @@ app.add_middleware(
 DB_PATH = os.path.join(DATA_DIR, "jagi_mahalo.db")
 
 # ---------------------- MODELOS Pydantic ----------------------
-class ProductoNuevo(BaseModel):
-    c_barra: str
-    d_marca: str
-    color: Optional[str] = "SIN COLOR"
-
-class ReabastecimientoParams(BaseModel):
-    dias_reab: int = 10
-    dias_exp: int = 60
-    ventas_min_exp: int = 3
-    solo_con_ventas: bool = False
-    nuevos_codigos: Optional[List[ProductoNuevo]] = None
-
-class ReabastecimientoExportParams(BaseModel):
-    dias_reab: int = 10
-    dias_exp: int = 60
-    ventas_min_exp: int = 3
-    solo_con_ventas: bool = False
-    nuevos_codigos: Optional[List[ProductoNuevo]] = None
-    columnas_seleccionadas: Optional[List[str]] = None
-    tiendas_filtro: Optional[List[str]] = None
-    observaciones_filtro: Optional[List[str]] = None
 
 class RedistribucionParams(BaseModel):
     dias: int = 30
@@ -302,7 +284,7 @@ async def actualizar_inventario_fisico(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 # ===== REPORTES =====
-@app.post("/reabastecimiento", response_model=ReabastecimientoResponse)
+@app.post("/reabastecimiento/calcular", response_model=ReabastecimientoResponse)
 async def calcular_reabastecimiento(
     request: ReabastecimientoCalculoRequest
 ) -> ReabastecimientoResponse:
@@ -316,7 +298,7 @@ async def calcular_reabastecimiento(
     - códigos: normalizados a uppercase
     
     Returns:
-        ReabastecimientoResponse con items calculados y resumen
+        JSON con items calculados y resumen
     """
     import logging
     from app.services.reabastecimiento_service import get_reabastecimiento_avanzado
@@ -331,13 +313,17 @@ async def calcular_reabastecimiento(
             f"Período: {request.fecha_inicio} - {request.fecha_fin}"
         )
         
-        # Llamar al servicio (tu lógica existente)
-        df = get_reabastecimiento_avanzado(
+        motor_params = ReabastecimientoMotorParams(
             dias_reab=request.dias_venta,
             dias_exp=request.dias_stock,
             excluir_sin_movimiento=not request.incluir_sin_movimiento,
             incluir_fijos=True,
             guardar_debug_csv=False
+        )
+
+        # Llamar al servicio (tu lógica existente)
+        df = get_reabastecimiento_avanzado(
+            **motor_params.model_dump(exclude_none=True)
         )
         
         # Convertir DataFrame a lista de items
@@ -409,9 +395,84 @@ async def calcular_reabastecimiento(
     except Exception as e:
         logger.error(f"Error calculando reabastecimiento: {str(e)}", exc_info=True)
         raise
+
+@app.post("/reabastecimiento/exportar")
+async def generar_reabastecimiento(params: ReabastecimientoExportParams):
+    """
+    Genera reporte de reabastecimiento con filtros opcionales.
+    Compatible con versión anterior (backward compatible).
+    """
+    try:
+        # Convertir nuevos_codigos de Pydantic a dict si existen
+        nuevos_codigos_dict = None
+        if params.nuevos_codigos:
+            nuevos_codigos_dict = [
+                {
+                    "c_barra": p.c_barra,
+                    "d_marca": p.d_marca,
+                    "color": p.color
+                }
+                for p in params.nuevos_codigos
+            ]
+        
+        # Generar reporte completo
+        df = get_reabastecimiento_avanzado(
+            dias_reab=params.dias_reab,
+            dias_exp=params.dias_exp,
+            ventas_min_exp=params.ventas_min_exp,
+            solo_con_ventas=params.solo_con_ventas,
+            nuevos_codigos=nuevos_codigos_dict,
+            excluir_sin_movimiento=params.excluir_sin_movimiento,
+            incluir_fijos=params.incluir_fijos,
+            guardar_debug_csv=params.guardar_debug_csv
+        )
+        
+        if "region" in df.columns:
+            df = df.drop(columns=["region"])
+        
+        # APLICAR FILTROS (solo si existen)
+        if params.tiendas_filtro and len(params.tiendas_filtro) > 0:
+            df = df[df['tienda'].isin(params.tiendas_filtro)]
+            logging.info(f"Filtro de tiendas aplicado: {len(params.tiendas_filtro)} tiendas")
+        
+        if params.observaciones_filtro and len(params.observaciones_filtro) > 0:
+            df = df[df['observacion'].isin(params.observaciones_filtro)]
+            logging.info(f"Filtro de observaciones aplicado: {params.observaciones_filtro}")
+        
+        # FILTRAR COLUMNAS (solo si existen)
+        if params.columnas_seleccionadas and len(params.columnas_seleccionadas) > 0:
+            columnas_validas = [col for col in params.columnas_seleccionadas if col in df.columns]
+            if columnas_validas:
+                df = df[columnas_validas]
+                logging.info(f"Filtro de columnas aplicado: {len(columnas_validas)} columnas")
+        
+        # Validación: asegurarse de que hay datos para exportar
+        if df.empty:
+            raise HTTPException(
+                status_code=400, 
+                detail="No hay datos para exportar con los filtros aplicados"
+            )
+        
+        archivo = "reabastecimiento_jagi.xlsx"
+        exportar_excel_formateado(df, archivo, "Reabastecimiento")
+        
+        logging.info(f"Reporte generado: {len(df)} registros")
+        
+        return FileResponse(
+            archivo, 
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+            filename=archivo
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error en reabastecimiento: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/reabastecimiento/columnas-disponibles")
-async def obtener_columnas_reabastecimiento(params: ReabastecimientoParams):
+async def obtener_columnas_reabastecimiento(
+    params: ReabastecimientoMotorParams
+):
     """
     Retorna las columnas disponibles en el reporte de reabastecimiento
     sin generar el archivo completo (más rápido)
@@ -430,11 +491,7 @@ async def obtener_columnas_reabastecimiento(params: ReabastecimientoParams):
         
         # Generar solo una muestra pequeña para obtener columnas
         df = get_reabastecimiento_avanzado(
-            dias_reab=params.dias_reab,
-            dias_exp=params.dias_exp,
-            ventas_min_exp=params.ventas_min_exp,
-            solo_con_ventas=params.solo_con_ventas,
-            nuevos_codigos=nuevos_codigos_dict
+            **motor_params.model_dump(exclude_none=True)
         )
         
         if "region" in df.columns:
@@ -452,8 +509,8 @@ async def obtener_columnas_reabastecimiento(params: ReabastecimientoParams):
         logging.error(f"Error al obtener columnas: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
-@app.post("/reabastecimiento/opciones-filtros")
-async def obtener_opciones_filtros(params: ReabastecimientoParams):
+@app.post("/reabastecimiento/opciones-filtros") 
+async def obtener_opciones_filtros(params: ReabastecimientoMotorParams):
     """
     Obtiene las opciones disponibles para filtros:
     - Lista de tiendas
@@ -461,9 +518,12 @@ async def obtener_opciones_filtros(params: ReabastecimientoParams):
     - Total de registros sin filtrar
     """
     try:
-        nuevos_codigos_dict = None
+        # Base params
+        motor_params = params.model_dump(exclude_none=True)
+
+        # Convertir nuevos_codigos si existen
         if params.nuevos_codigos:
-            nuevos_codigos_dict = [
+            motor_params["nuevos_codigos"] = [
                 {
                     "c_barra": p.c_barra,
                     "d_marca": p.d_marca,
@@ -471,24 +531,26 @@ async def obtener_opciones_filtros(params: ReabastecimientoParams):
                 }
                 for p in params.nuevos_codigos
             ]
-        
-        # Generar reporte completo para obtener opciones
-        df = get_reabastecimiento_avanzado(
-            dias_reab=params.dias_reab,
-            dias_exp=params.dias_exp,
-            ventas_min_exp=params.ventas_min_exp,
-            solo_con_ventas=params.solo_con_ventas,
-            nuevos_codigos=nuevos_codigos_dict
-        )
-        
+
+        # Generar reporte completo
+        df = get_reabastecimiento_avanzado(**motor_params)
+
         if "region" in df.columns:
             df = df.drop(columns=["region"])
-        
+
         # Extraer opciones únicas
-        tiendas = sorted(df['tienda'].dropna().unique().tolist()) if 'tienda' in df.columns else []
-        observaciones = sorted(df['observacion'].dropna().unique().tolist()) if 'observacion' in df.columns else []
+        tiendas = (
+            sorted(df["tienda"].dropna().unique().tolist())
+            if "tienda" in df.columns else []
+        )
+
+        observaciones = (
+            sorted(df["observacion"].dropna().unique().tolist())
+            if "observacion" in df.columns else []
+        )
+
         columnas = df.columns.tolist()
-        
+
         return JSONResponse({
             "success": True,
             "tiendas": tiendas,
@@ -496,20 +558,30 @@ async def obtener_opciones_filtros(params: ReabastecimientoParams):
             "columnas": columnas,
             "total_registros": len(df)
         })
+
     except Exception as e:
         logging.error(f"Error al obtener opciones de filtros: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/reabastecimiento/preview-filtrado")
-async def preview_reabastecimiento_filtrado(params: ReabastecimientoExportParams):
-    """
-    Genera preview filtrado según tiendas y observaciones seleccionadas.
-    Retorna solo primeras 100 filas para mejor rendimiento.
-    """
+async def preview_reabastecimiento_filtrado(
+    params: ReabastecimientoExportParams
+):
     try:
-        nuevos_codigos_dict = None
+        motor_params = params.model_dump(
+            exclude_none=True,
+            exclude={
+                "tiendas_filtro",
+                "observaciones_filtro",
+                "columnas_seleccionadas",
+                "guardar_debug_csv",
+                "incluir_fijos",
+                "excluir_sin_movimiento",
+            }
+        )
+
         if params.nuevos_codigos:
-            nuevos_codigos_dict = [
+            motor_params["nuevos_codigos"] = [
                 {
                     "c_barra": p.c_barra,
                     "d_marca": p.d_marca,
@@ -517,50 +589,46 @@ async def preview_reabastecimiento_filtrado(params: ReabastecimientoExportParams
                 }
                 for p in params.nuevos_codigos
             ]
-        
-        # Generar reporte completo
-        df = get_reabastecimiento_avanzado(
-            dias_reab=params.dias_reab,
-            dias_exp=params.dias_exp,
-            ventas_min_exp=params.ventas_min_exp,
-            solo_con_ventas=params.solo_con_ventas,
-            nuevos_codigos=nuevos_codigos_dict
-        )
-        
+
+        df = get_reabastecimiento_avanzado(**motor_params)
+
         if "region" in df.columns:
             df = df.drop(columns=["region"])
-        
-        # ← APLICAR FILTROS
+
         df_filtrado = df.copy()
-        
-        # Filtro de tiendas
-        if params.tiendas_filtro and len(params.tiendas_filtro) > 0:
-            df_filtrado = df_filtrado[df_filtrado['tienda'].isin(params.tiendas_filtro)]
-        
-        # Filtro de observaciones
-        if params.observaciones_filtro and len(params.observaciones_filtro) > 0:
-            df_filtrado = df_filtrado[df_filtrado['observacion'].isin(params.observaciones_filtro)]
-        
-        total_registros = len(df_filtrado)
-        
-        # Limitar a 100 registros para preview (rendimiento)
+
+        if params.tiendas_filtro:
+            df_filtrado = df_filtrado[df_filtrado["tienda"].isin(params.tiendas_filtro)]
+
+        if params.observaciones_filtro:
+            df_filtrado = df_filtrado[
+                df_filtrado["observacion"].isin(params.observaciones_filtro)
+            ]
+
         df_preview = df_filtrado.head(100)
-        
-        # Estadísticas adicionales
-        tiendas_incluidas = df_filtrado['tienda'].nunique() if 'tienda' in df_filtrado.columns else 0
-        productos_unicos = df_filtrado['c_barra'].nunique() if 'c_barra' in df_filtrado.columns else 0
-        
-        return JSONResponse({
+
+        tiendas_incluidas = (
+            df_filtrado["tienda"].nunique()
+            if "tienda" in df_filtrado.columns else 0
+        )
+
+        productos_unicos = (
+            df_filtrado["c_barra"].nunique()
+            if "c_barra" in df_filtrado.columns else 0
+        )
+
+        return {
             "success": True,
-            "total_registros": total_registros,
+            "total_registros": len(df_filtrado),
             "preview_registros": len(df_preview),
             "tiendas_incluidas": tiendas_incluidas,
             "productos_unicos": productos_unicos,
-            "datos": df_preview.to_dict(orient='records')
-        })
+            "datos": df_preview.to_dict(orient="records")
+        }
+
     except Exception as e:
         logging.error(f"Error en preview filtrado: {e}")
-        raise HTTPException(status_code=500, detail=str(e))    
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/redistribucion")
 async def generar_redistribucion(params: RedistribucionParams):
@@ -580,12 +648,13 @@ async def generar_redistribucion(params: RedistribucionParams):
 
 # ===== PREVIEWS =====
 @app.post("/reabastecimiento-preview")
-async def preview_reabastecimiento(params: ReabastecimientoParams):
+async def preview_reabastecimiento(params: ReabastecimientoMotorParams):
     try:
-        # Convertir nuevos_codigos de Pydantic a dict si existen
-        nuevos_codigos_dict = None
+        motor_params = params.model_dump(exclude_none=True)
+
+        # Convertir nuevos_codigos si existen
         if params.nuevos_codigos:
-            nuevos_codigos_dict = [
+            motor_params["nuevos_codigos"] = [
                 {
                     "c_barra": p.c_barra,
                     "d_marca": p.d_marca,
@@ -593,21 +662,24 @@ async def preview_reabastecimiento(params: ReabastecimientoParams):
                 }
                 for p in params.nuevos_codigos
             ]
-        
-        df = get_reabastecimiento_avanzado(
-            dias_reab=params.dias_reab,
-            dias_exp=params.dias_exp,
-            ventas_min_exp=params.ventas_min_exp,
-            solo_con_ventas=params.solo_con_ventas,
-            nuevos_codigos=nuevos_codigos_dict  # ⭐ PASAR NUEVOS CÓDIGOS
-        )
-        
+
+        df = get_reabastecimiento_avanzado(**motor_params)
+
+        # Limpieza defensiva
         if "region" in df.columns:
             df = df.drop(columns=["region"])
-        
-        datos = df.to_dict(orient='records')
-        return JSONResponse({"success": True, "total": len(datos), "datos": datos[:10000]})
-    except Exception as e: 
+
+        datos = df.to_dict(orient="records")
+
+        return {
+            "success": True,
+            "total": len(datos),
+            "datos": datos[:10000]
+        }
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     
 @app.post("/exportar-preview-personalizado")

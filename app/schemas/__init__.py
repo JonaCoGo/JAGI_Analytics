@@ -32,10 +32,10 @@ from app.schemas.common import (
 # Schemas de reabastecimiento
 from app.schemas.reabastecimiento import (
     ReabastecimientoCalculoRequest,
-    ReabastecimientoFiltrosRequest,
+    ReabastecimientoMotorParams,
+    ReabastecimientoExportParams,
     ReabastecimientoItem,
     ReabastecimientoResponse,
-    ReabastecimientoExportRequest,
 )
 
 __all__ = [
@@ -55,8 +55,8 @@ __all__ = [
     
     # Reabastecimiento
     "ReabastecimientoCalculoRequest",
-    "ReabastecimientoFiltrosRequest",
+    "ReabastecimientoMotorParams",
+    "ReabastecimientoExportParams",
     "ReabastecimientoItem",
     "ReabastecimientoResponse",
-    "ReabastecimientoExportRequest",
 ]
