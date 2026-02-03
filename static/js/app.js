@@ -10,6 +10,7 @@
 let datosPreview = null;
 let paginaActual = 1;
 let tipoModalActual = null; // 'filtros' o 'preview'
+let tipoReporteActual = 'reabastecimiento';
 
 // ==========================================
 // 2. INICIALIZACIÓN
@@ -160,10 +161,11 @@ function actualizarEstadoConexion(id, conectado) {
 // ==========================================
 // 6. MODAL DE VISTA PREVIA
 // ==========================================
-function abrirModal(titulo, datos) {
+function abrirModal(titulo, datos, tipoReporte = 'reabastecimiento') {
     datosPreview = datos;
     paginaActual = 1;
-    tipoModalActual = 'preview'; // Establecer tipo de modal
+    tipoModalActual = 'preview';
+    tipoReporteActual = tipoReporte;
     
     const modal = document.getElementById('previewModal');
     const modalTitle = document.getElementById('modalTitle');
@@ -177,7 +179,11 @@ function abrirModal(titulo, datos) {
     if (tablaSeccion) tablaSeccion.classList.remove('hidden');
     if (filtrosSeccion) filtrosSeccion.classList.add('hidden');
     
+    // Actualizar botón de exportación según tipo de reporte
+    actualizarBotonExportacionModal(tipoReporte);
+
     renderizarTabla();
+
 }
 
 function cerrarModal() {
@@ -193,6 +199,36 @@ function cerrarModal() {
     
     if (tablaSeccion) tablaSeccion.classList.remove('hidden');
     if (filtrosSeccion) filtrosSeccion.classList.add('hidden');
+}
+
+function actualizarBotonExportacionModal(tipoReporte) {
+    // ⭐ CAMBIAR EL SELECTOR - Buscar por ID o clase específica
+    const btnExportar = document.getElementById('btnExportarModal');
+    
+    if (!btnExportar) {
+        console.error('❌ Botón btnExportarModal no encontrado');
+        return;
+    }
+    
+    console.log('✅ Actualizando botón a:', tipoReporte);
+    
+    if (tipoReporte === 'redistribucion') {
+        // Cambiar para redistribución
+        btnExportar.onclick = () => {
+            console.log('🟣 Ejecutando redistribución directo');
+            generarRedistribucionDirecto();
+        };
+        btnExportar.innerHTML = '📥 Exportar Redistribución';
+        btnExportar.className = "bg-purple-600 text-white px-6 py-2 rounded hover:bg-purple-700 flex items-center gap-2";
+    } else{
+        // Cambiar para reabastecimiento
+        btnExportar.onclick = () => {
+            console.log('🟢 Abriendo modal avanzado');
+            abrirModalExportacionAvanzada();
+        };
+        btnExportar.innerHTML = '📥 Exportar Excel';
+        btnExportar.className = "bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700 flex items-center gap-2";
+    }
 }
 
 function renderizarTabla() {
@@ -403,7 +439,7 @@ async function generarReabastecimiento() {
         if (response.ok) {
             const result = await response.json();
             if (result.success) {
-                abrirModal(`Reabastecimiento - ${result.total} registros`, result.datos);
+                abrirModal(`Reabastecimiento - ${result.total} registros`, result.datos, 'reabastecimiento');
             } else {
                 showNotification('No hay datos para mostrar', 'error');
             }
@@ -477,7 +513,7 @@ async function generarRedistribucion() {
         if (response.ok) {
             const result = await response.json();
             if (result.success) {
-                abrirModal(`Redistribución - ${result.total} registros`, result.datos);
+                abrirModal(`Redistribución - ${result.total} registros`, result.datos, 'redistribucion');
             } else {
                 showNotification(result.message || 'No hay redistribuciones sugeridas', 'error');
             }
