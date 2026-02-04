@@ -1,3 +1,5 @@
+# scripts/inspect_BD.py
+
 import sqlite3
 
 DB_PATH = "jagi_mahalo.db"

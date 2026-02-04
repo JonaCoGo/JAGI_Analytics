@@ -1,4 +1,4 @@
-# middleware.py
+# app/middleware.py
 
 """
 Middleware para manejo global de excepciones en FastAPI.

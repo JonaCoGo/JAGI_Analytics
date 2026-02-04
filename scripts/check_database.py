@@ -1,4 +1,4 @@
-# test_database.py
+# scripts/test_database.py
 
 """
 Script para probar la capa de abstracción de base de datos.

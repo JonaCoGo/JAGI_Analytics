@@ -1,4 +1,4 @@
-# analisis_marca_repository.py
+# app/repositories/analisis_marca_repository.py
 
 import pandas as pd
 

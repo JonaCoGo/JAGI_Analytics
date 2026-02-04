@@ -1,4 +1,4 @@
-# actualizar_inventario_bodega
+# app/actualizar_inventario_bodega
 
 import sqlite3
 import pandas as pd

@@ -1,4 +1,4 @@
-# database.py
+# app/database.py
 
 """
 Capa de abstracción para conexiones a base de datos.

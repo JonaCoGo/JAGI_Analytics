@@ -1,4 +1,4 @@
-// app.js
+// static/js/app.js
 
 // ========================================
 // LÓGICA PRINCIPAL DEL SISTEMA JAGI ERP

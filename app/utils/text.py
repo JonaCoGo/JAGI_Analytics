@@ -1,4 +1,4 @@
-# text.py
+# app/utils/text.py
 
 import pandas as pd
 import unicodedata

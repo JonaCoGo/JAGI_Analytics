@@ -1,4 +1,4 @@
-# exceptions.py
+# app/exceptions.py
 
 """
 Excepciones personalizadas para JAGI ERP.

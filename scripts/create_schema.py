@@ -1,3 +1,5 @@
+# scripts/create_schema.py
+
 import sqlite3
 
 DB_NAME = "jagi_mahalo.db"

@@ -1,4 +1,4 @@
-# test_refactorizacion.py
+# scripts/test_refactorizacion.py
 
 from app.database import test_connection, get_db_info, get_connection
 import pandas as pd

@@ -1,4 +1,4 @@
-# producto_service.py
+# app/services/producto_service.py
 
 import pandas as pd
 from app.database import get_connection

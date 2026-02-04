@@ -1,4 +1,4 @@
-# cargar_csv
+# app/cargar_csv
 
 import sqlite3
 import pandas as pd

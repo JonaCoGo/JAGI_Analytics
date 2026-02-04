@@ -1,4 +1,4 @@
-// config.js
+// static/js/config.js
 // ========================================
 // CONFIGURACIÓN GLOBAL DEL SISTEMA
 // ========================================

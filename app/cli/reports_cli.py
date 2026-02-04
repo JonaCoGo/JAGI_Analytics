@@ -1,4 +1,4 @@
-# reports_cli.py
+# app/cli/reports_cli.py
 
 from app.consultas import (
     get_reabastecimiento_avanzado,

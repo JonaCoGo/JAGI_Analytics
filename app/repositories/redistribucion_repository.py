@@ -1,4 +1,4 @@
-# redistribucion_repository.py
+# app/repositories/redistribucion_repository.py
 
 import pandas as pd
 

@@ -1,4 +1,4 @@
-# existencias_repository.py
+# app/repositories/existencias_repository.py
 
 import pandas as pd
 from app.database import get_connection

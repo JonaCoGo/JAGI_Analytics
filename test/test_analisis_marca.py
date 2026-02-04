@@ -1,4 +1,4 @@
-# test_analisis_marca_2
+# test/test_analisis_marca_2
 
 import pytest
 from app.consultas import get_analisis_marca

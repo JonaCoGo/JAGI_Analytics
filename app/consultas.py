@@ -1,4 +1,4 @@
-# consultas.py
+# app/consultas.py
 
 
 from app.database import DB_NAME

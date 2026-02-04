@@ -1,3 +1,5 @@
+# app/services/__init__.py
+
 from .analisis_marca_service import get_analisis_marca
 from .producto_service import get_consulta_producto
 from .existencias_service import get_existencias_por_tienda

@@ -1,3 +1,5 @@
+# app/repositories/__init__.py
+
 from .producto_repository import *
 from .movimiento_repository import *
 from .faltantes_repository import *
