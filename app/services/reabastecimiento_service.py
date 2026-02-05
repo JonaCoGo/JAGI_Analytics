@@ -15,10 +15,6 @@ def get_reabastecimiento_avanzado(
     nuevos_codigos=None,
     solo_con_ventas=False
 ):
-    """
-    Genera el reporte de reabastecimiento avanzado, expansión y nuevos códigos.
-    Versión restaurada funcional (equivalente al backup original).
-    """
 
     if nuevos_codigos is None:
         nuevos_codigos = []
@@ -27,6 +23,7 @@ def get_reabastecimiento_avanzado(
     # CARGA BASE DE DATOS
     # =========================
     with get_connection() as conn:
+
         df_cfg = pd.read_sql("SELECT tipo, cantidad FROM stock_minimo_config", conn)
         cfg_map = {
             str(r["tipo"]).lower(): int(r["cantidad"])
@@ -49,6 +46,30 @@ def get_reabastecimiento_avanzado(
         config_tiendas = pd.read_sql(
             "SELECT raw_name, clean_name, region, fija, tipo_tienda FROM config_tiendas",
             conn
+        )
+
+        # -------------------------
+        # STOCK TOTAL REAL DE BODEGA (CLAVE)
+        # -------------------------
+        df_bodega_total = pd.read_sql("""
+            SELECT 
+                c_barra,
+                SUM(saldo_disponibles) AS stock_bodega_total
+            FROM inventario_bodega_raw
+            GROUP BY c_barra
+        """, conn)
+
+        df_bodega_total["c_barra"] = (
+            df_bodega_total["c_barra"]
+            .astype(str)
+            .str.upper()
+        )
+
+        stock_bodega_map = dict(
+            zip(
+                df_bodega_total["c_barra"],
+                df_bodega_total["stock_bodega_total"]
+            )
         )
 
         # -------------------------
@@ -99,6 +120,7 @@ def get_reabastecimiento_avanzado(
         # EXPANSIÓN (VENTAS LARGAS)
         # -------------------------
         fecha_desde_exp = date_subtract_days(dias_exp)
+
         query_exp = f"""
         SELECT 
             h.c_barra,
@@ -113,13 +135,28 @@ def get_reabastecimiento_avanzado(
 
         tiendas_all = config_tiendas["clean_name"].dropna().unique().tolist()
 
+        info_ref = pd.read_sql("""
+            SELECT DISTINCT c_barra, d_marca, d_color_proveedor AS color
+            FROM ventas_saldos_raw
+            WHERE c_barra IS NOT NULL
+        """, conn)
+
+        df_existencias = pd.read_sql("""
+            SELECT DISTINCT 
+                COALESCE(ct.clean_name, s.d_almacen) AS tienda,
+                s.c_barra
+            FROM ventas_saldos_raw s
+            LEFT JOIN config_tiendas ct ON s.d_almacen = ct.raw_name
+        """, conn)
+
     # =========================
     # NORMALIZACIÓN
     # =========================
     config_tiendas["clean_norm"] = config_tiendas["clean_name"].fillna("").apply(_norm)
     region_map = dict(zip(config_tiendas["clean_norm"], config_tiendas["region"]))
+
     tiendas_fijas_set = set(
-        config_tiendas.loc[config_tiendas["fija"] == 1, "clean_name"].apply(_norm)
+        config_tiendas.loc[config_tiendas["fija"] == 1, "clean_norm"]
     )
 
     df["tienda_norm"] = df["tienda"].fillna("").apply(_norm)
@@ -135,12 +172,13 @@ def get_reabastecimiento_avanzado(
     # STOCK MÍNIMO DINÁMICO
     # =========================
     def calcular_stock_min(row):
-        tienda_norm = _norm(row["tienda"])
         code = str(row["c_barra"]).upper()
         marca = str(row["d_marca"]).upper()
 
         if code in ref_set:
-            return cfg_map.get("fijo_especial", 8) if tienda_norm in tiendas_fijas_set else cfg_map.get("fijo_normal", 5)
+            return cfg_map.get(
+                "fijo_especial" if row["tienda_norm"] in tiendas_fijas_set else "fijo_normal", 5
+            )
         if marca in marca_set:
             return cfg_map.get("multimarca", 2)
         if "JGL" in code or "JGL" in marca:
@@ -153,95 +191,91 @@ def get_reabastecimiento_avanzado(
 
     df["cantidad_a_despachar"] = df.apply(
         lambda r: max(r["stock_minimo_dinamico"] - (r["stock_actual"] or 0), 0)
-        if (r["ventas_periodo"] > 0 or str(r["c_barra"]).upper() in ref_set)
+        if (r["ventas_periodo"] > 0 or r["c_barra"].upper() in ref_set)
         else 0,
         axis=1
     )
 
+    # =========================
+    # MOTOR DE ASIGNACIÓN REABASTECIMIENTO
+    # =========================
+    df["es_tienda_fija"] = df["tienda_norm"].isin(tiendas_fijas_set).astype(int)
+    df["prioridad_tienda"] = df["es_tienda_fija"] * 100 + df["ventas_periodo"]
+
+    df["cantidad_asignada_real"] = 0
+    df["stock_bodega_restante"] = df["stock_bodega"]
+
+    for c_barra, grupo in df.groupby("c_barra"):
+        stock = grupo["stock_bodega"].iloc[0]
+        grupo_ord = grupo.sort_values("prioridad_tienda", ascending=False)
+
+        for idx, row in grupo_ord.iterrows():
+            if stock <= 0:
+                break
+            demanda = row["cantidad_a_despachar"]
+            if demanda <= 0:
+                continue
+
+            asignado = min(demanda, stock)
+            df.loc[idx, "cantidad_asignada_real"] = asignado
+            stock -= asignado
+
+        df.loc[grupo.index, "stock_bodega_restante"] = stock
+
+    # =========================
+    # OBSERVACIÓN BASE
+    # =========================
     df["observacion"] = df.apply(
         lambda r: "OK"
         if r["cantidad_a_despachar"] == 0
-        else "COMPRA"
-        if r["cantidad_a_despachar"] > (r["stock_bodega"] or 0)
-        else "REABASTECER",
+        else "REABASTECER"
+        if r["cantidad_asignada_real"] > 0
+        else "COMPRA",
         axis=1
     )
 
-    if excluir_sin_movimiento:
-        if incluir_fijos:
-            df = df[(df["ventas_periodo"] > 0) | (df["c_barra"].str.upper().isin(ref_set))]
-        else:
-            df = df[df["ventas_periodo"] > 0]
-
     # =========================
-    # EXPANSIÓN (LÓGICA COMPLETA)
+    # EXPANSIÓN + NUEVOS (FILAS)
     # =========================
-    with get_connection() as conn:
-        info_ref = pd.read_sql("""
-            SELECT DISTINCT c_barra, d_marca, d_color_proveedor AS color
-            FROM ventas_saldos_raw
-            WHERE c_barra IS NOT NULL
-        """, conn)
-
-        df_existencias = pd.read_sql("""
-            SELECT DISTINCT 
-                COALESCE(ct.clean_name, s.d_almacen) AS tienda,
-                s.c_barra,
-                s.saldo_disponible
-            FROM ventas_saldos_raw s
-            LEFT JOIN config_tiendas ct ON s.d_almacen = ct.raw_name
-        """, conn)
-
     df_existencias["tienda_norm"] = df_existencias["tienda"].apply(_norm)
     df_existencias["c_barra_up"] = df_existencias["c_barra"].astype(str).str.upper()
-    existentes_fisicos = set(zip(df_existencias["tienda_norm"], df_existencias["c_barra_up"]))
-
-    df_exp_validas = df_exp[df_exp["ventas_expansion"] >= ventas_min_exp].copy()
-    df_exp_validas = df_exp_validas[~df_exp_validas["c_barra"].isin(codigos_excluidos)]
-    df_exp_validas["c_barra_up"] = df_exp_validas["c_barra"].astype(str).str.upper()
+    existentes = set(zip(df_existencias["tienda_norm"], df_existencias["c_barra_up"]))
 
     exp_rows = []
 
-    for code in df_exp_validas["c_barra_up"].unique():
-        tiendas_con_venta = df_exp_validas.loc[
-            df_exp_validas["c_barra_up"] == code, "tienda"
-        ].dropna().unique().tolist()
-        tiendas_con_venta_norm = [_norm(t) for t in tiendas_con_venta]
+    df_exp_validas = df_exp[
+        (df_exp["ventas_expansion"] >= ventas_min_exp)
+        & (~df_exp["c_barra"].isin(codigos_excluidos))
+    ]
+
+    for _, row in df_exp_validas.iterrows():
+        code = row["c_barra"].upper()
+        stock_real = stock_bodega_map.get(code, 0)
 
         info = info_ref[info_ref["c_barra"].astype(str).str.upper() == code]
-        d_marca_val = info["d_marca"].iloc[0] if not info.empty else "SIN MARCA"
-        color_val = info["color"].iloc[0] if not info.empty else "SIN COLOR"
+        marca = info["d_marca"].iloc[0] if not info.empty else "SIN MARCA"
+        color = info["color"].iloc[0] if not info.empty else "SIN COLOR"
 
         for tienda in tiendas_all:
-            tienda_norm = _norm(tienda)
-            if tienda_norm in tiendas_con_venta_norm:
-                continue
-            if (tienda_norm, code) in existentes_fisicos:
+            tn = _norm(tienda)
+            if (tn, code) in existentes:
                 continue
 
-            if code in ref_set:
-                tipo = "fijo_especial" if tienda_norm in tiendas_fijas_set else "fijo_normal"
-            elif d_marca_val.upper() in marca_set:
-                tipo = "multimarca"
-            elif "JGL" in code or "JGL" in d_marca_val.upper():
-                tipo = "jgl"
-            elif "JGM" in code or "JGM" in d_marca_val.upper():
-                tipo = "jgm"
-            else:
-                tipo = "default"
-
-            stock_min = cfg_map.get(tipo, 4)
+            stock_min = cfg_map.get("default", 4)
 
             exp_rows.append({
-                "region": region_map.get(tienda_norm, "SIN REGION"),
+                "region": region_map.get(tn, "SIN REGION"),
                 "tienda": tienda,
+                "tienda_norm": tn,
                 "c_barra": code,
-                "d_marca": d_marca_val,
-                "color": color_val,
+                "d_marca": marca,
+                "color": color,
                 "ventas_periodo": 0,
                 "stock_actual": 0,
-                "stock_bodega": 0,
+                "stock_bodega": stock_real,
+                "stock_bodega_restante": stock_real,
                 "stock_minimo_dinamico": stock_min,
+                "cantidad_asignada_real": 0,
                 "cantidad_a_despachar": stock_min,
                 "observacion": "EXPANSION"
             })
@@ -250,51 +284,101 @@ def get_reabastecimiento_avanzado(
         df = pd.concat([df, pd.DataFrame(exp_rows)], ignore_index=True)
 
     # =========================
-    # NUEVOS CÓDIGOS
+    # MOTOR EXPANSIÓN
+    # =========================
+    mask_exp = df["observacion"] == "EXPANSION"
+
+    for c_barra, grupo in df[mask_exp].groupby("c_barra"):
+        stock = grupo["stock_bodega"].iloc[0]
+
+        for idx, row in grupo.iterrows():
+            if stock <= 0:
+                break
+
+            demanda = row["cantidad_a_despachar"]
+            asignado = min(demanda, stock)
+
+            df.loc[idx, "cantidad_asignada_real"] = asignado
+            stock -= asignado
+
+        df.loc[grupo.index, "stock_bodega_restante"] = stock
+
+
+    # =========================
+    # NUEVOS CÓDIGOS (FILAS)
     # =========================
     if nuevos_codigos:
         nuevos_rows = []
+
         for c in nuevos_codigos:
+            code = str(c.get("c_barra")).upper()
+            marca = c.get("d_marca", "SIN MARCA")
+            color = c.get("color", "SIN COLOR")
+
+            stock_real = stock_bodega_map.get(code, 0)
+
             for tienda in tiendas_all:
-                tienda_norm = _norm(tienda)
+                tn = _norm(tienda)
+
                 nuevos_rows.append({
-                    "region": region_map.get(tienda_norm, "SIN REGION"),
+                    "region": region_map.get(tn, "SIN REGION"),
                     "tienda": tienda,
-                    "c_barra": c.get("c_barra"),
-                    "d_marca": c.get("d_marca", "SIN MARCA"),
-                    "color": c.get("color", "SIN COLOR"),
+                    "tienda_norm": tn,
+                    "c_barra": code,
+                    "d_marca": marca,
+                    "color": color,
                     "ventas_periodo": 0,
                     "stock_actual": 0,
-                    "stock_bodega": 0,
-                    "stock_minimo_dinamico": cfg_map.get("general", 4),
-                    "cantidad_a_despachar": cfg_map.get("general", 4),
+                    "stock_bodega": stock_real,
+                    "stock_bodega_restante": stock_real,
+                    "stock_minimo_dinamico": cfg_map.get("default", 4),
+                    "cantidad_asignada_real": 0,
+                    "cantidad_a_despachar": cfg_map.get("default", 4),
                     "observacion": "NUEVO"
                 })
-        df = pd.concat([df, pd.DataFrame(nuevos_rows)], ignore_index=True)
+
+        if nuevos_rows:
+            df = pd.concat([df, pd.DataFrame(nuevos_rows)], ignore_index=True)
+
+    # =========================
+    # MOTOR ASIGNACIÓN EXPANSION + NUEVO
+    # =========================
+    mask_especial = df["observacion"].isin(["EXPANSION", "NUEVO"])
+
+    for c_barra, grupo in df[mask_especial].groupby("c_barra"):
+        stock = grupo["stock_bodega"].iloc[0]
+
+        for idx, row in grupo.iterrows():
+            if stock <= 0:
+                break
+
+            demanda = row["cantidad_a_despachar"]
+            if demanda <= 0:
+                continue
+
+            asignado = min(demanda, stock)
+            df.loc[idx, "cantidad_asignada_real"] = asignado
+            stock -= asignado
+
+        df.loc[grupo.index, "stock_bodega_restante"] = stock       
 
     # =========================
     # SALIDA FINAL
     # =========================
     df = df[df["observacion"] != "OK"]
-    df = df.sort_values(by=["region", "tienda", "d_marca", "c_barra"])
 
     columnas = [
         "region", "tienda", "c_barra", "d_marca", "color",
-        "ventas_periodo", "stock_actual", "stock_bodega",
-        "stock_minimo_dinamico", "cantidad_a_despachar", "observacion"
+        "ventas_periodo", "stock_actual",
+        "stock_bodega", "stock_bodega_restante",
+        "stock_minimo_dinamico",
+        "cantidad_asignada_real",
+        "cantidad_a_despachar",
+        "observacion"
     ]
 
-    result = df[columnas].copy()
-
-    if guardar_debug_csv:
-        sin_region = result[result["region"] == "SIN REGION"][["tienda"]].drop_duplicates()
-        if not sin_region.empty:
-            sin_region.to_csv("tiendas_sin_region.csv", index=False, encoding="utf-8-sig")
-
-    if solo_con_ventas:
-        result = result[
-            (result["ventas_periodo"] > 0)
-            | (result["observacion"].isin(["EXPANSION", "NUEVO"]))
-        ]
+    result = df[columnas].sort_values(
+        by=["region", "tienda", "d_marca", "c_barra"]
+    )
 
     return result
