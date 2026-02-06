@@ -320,6 +320,12 @@ def get_reabastecimiento_avanzado(
             for tienda in tiendas_all:
                 tn = _norm(tienda)
 
+                stock_min = calcular_stock_min({
+                    "c_barra": code,
+                    "d_marca": marca,
+                    "tienda_norm": tn
+                })
+
                 nuevos_rows.append({
                     "region": region_map.get(tn, "SIN REGION"),
                     "tienda": tienda,
@@ -331,9 +337,9 @@ def get_reabastecimiento_avanzado(
                     "stock_actual": 0,
                     "stock_bodega": stock_real,
                     "stock_bodega_restante": stock_real,
-                    "stock_minimo_dinamico": cfg_map.get("default", 4),
+                    "stock_minimo_dinamico": stock_min,
                     "cantidad_asignada_real": 0,
-                    "cantidad_a_despachar": cfg_map.get("default", 4),
+                    "cantidad_a_despachar": stock_min,
                     "observacion": "NUEVO"
                 })
 
@@ -349,18 +355,28 @@ def get_reabastecimiento_avanzado(
         stock = grupo["stock_bodega"].iloc[0]
 
         for idx, row in grupo.iterrows():
-            if stock <= 0:
-                break
-
             demanda = row["cantidad_a_despachar"]
             if demanda <= 0:
                 continue
 
-            asignado = min(demanda, stock)
-            df.loc[idx, "cantidad_asignada_real"] = asignado
-            stock -= asignado
+            # EXPANSION → solo si hay stock
+            if row["observacion"] == "EXPANSION":
+                if stock <= 0:
+                    break
+                asignado = min(demanda, stock)
+                stock -= asignado
 
-        df.loc[grupo.index, "stock_bodega_restante"] = stock       
+            # NUEVO → si hay stock lo consume, si no, fuerza asignación
+            else:  # NUEVO
+                if stock > 0:
+                    asignado = min(demanda, stock)
+                    stock -= asignado
+                else:
+                    asignado = demanda  # stock mínimo teórico
+
+            df.loc[idx, "cantidad_asignada_real"] = asignado
+
+        df.loc[grupo.index, "stock_bodega_restante"] = max(stock, 0)
 
     # =========================
     # SALIDA FINAL
