@@ -379,16 +379,35 @@ def get_reabastecimiento_avanzado(
         df.loc[grupo.index, "stock_bodega_restante"] = max(stock, 0)
 
     # =========================
+    # ICONOS EN OBSERVACIÓN
+    # =========================
+    icon_map = {
+        "REABASTECER": "✅ REABASTECER",
+        "PARCIAL": "⚠️ PARCIAL",
+        "COMPRA": "🛒 COMPRA",
+        "EXPANSION": "🚀 EXPANSION",
+        "NUEVO": "🆕 NUEVO",
+        "OK": "OK"
+    }
+
+    df["observacion"] = df["observacion"].map(icon_map).fillna(df["observacion"])    
+
+    # =========================
     # SALIDA FINAL
     # =========================
     df = df[df["observacion"] != "OK"]
+
+    df = df.rename(columns={
+        "cantidad_a_despachar": "cantidad_solicitada",
+        "cantidad_asignada_real": "cantidad_a_despachar"
+    })
 
     columnas = [
         "region", "tienda", "c_barra", "d_marca", "color",
         "ventas_periodo", "stock_actual",
         "stock_bodega", "stock_bodega_restante",
         "stock_minimo_dinamico",
-        "cantidad_asignada_real",
+        "cantidad_solicitada",
         "cantidad_a_despachar",
         "observacion"
     ]

@@ -13,6 +13,178 @@ let tipoModalActual = null; // 'filtros' o 'preview'
 let tipoReporteActual = 'reabastecimiento';
 
 // ==========================================
+// PERFILES DE EXPORTACIÓN
+// ==========================================
+const PERFILES_EXPORTACION = {
+    general: {
+        nombre: "General",
+        columnas: "ALL",
+        filtros: {
+            excluirCantidadCero: false,
+            soloCompra: false
+        }
+    },
+
+    picking: {
+        nombre: "Picking",
+        columnas: [
+            "tienda",
+            "c_barra",
+            "d_marca",
+            "color",
+            "cantidad_a_despachar",
+            "observacion"
+        ],
+        filtros: {
+            excluirCantidadCero: true,
+            soloCompra: false
+        }
+    },
+
+    auditoria: {
+        nombre: "Auditoría",
+        columnas: [
+            "tienda",
+            "c_barra",
+            "stock_bodega",
+            "stock_bodega_restante",
+            "cantidad_asignada",
+            "observacion"
+        ],
+        filtros: {
+            excluirCantidadCero: false,
+            soloCompra: false
+        }
+    },
+
+    compras: {
+        nombre: "Compras",
+        columnas: [
+            "c_barra",
+            "d_marca",
+            "color",
+            "cantidad_a_despachar",
+            "observacion"
+        ],
+        filtros: {
+            excluirCantidadCero: false,
+            soloCompra: true
+        }
+    }
+};
+
+let perfilExportacionActivo = "general";
+let perfilBloqueado = false;
+
+// ==========================================
+// APLICAR PERFIL DE EXPORTACIÓN
+// ==========================================
+function aplicarPerfilExportacion(perfil) {
+    console.log('🎯 aplicarPerfilExportacion:', perfil);
+    
+    if (!PERFILES_EXPORTACION[perfil]) return;
+
+    perfilExportacionActivo = perfil;
+    perfilBloqueado = true;
+    console.log('🔒 Perfil BLOQUEADO (inicio de aplicación)');
+
+    try {
+        const config = PERFILES_EXPORTACION[perfil];
+
+        // Badge
+        const badge = document.getElementById("badgePerfilActivo");
+        if (badge) {
+            badge.textContent = config.nombre;
+            badge.className = "badge badge-info";
+        }
+
+        // Columnas
+        if (config.columnas === "ALL") {
+            toggleTodasColumnasAvanzado(true);
+        } else {
+            toggleTodasColumnasAvanzado(false);
+            seleccionarColumnasPorPerfil(config.columnas);
+        }
+
+        // Filtros
+        aplicarFiltrosPorPerfil(config.filtros);
+
+        actualizarPreviewColumnasSeleccionadas();
+
+    } finally {
+        // ✅ CRÍTICO: Siempre desbloquear, incluso si hay errores
+        perfilBloqueado = false;
+        console.log('🔓 Perfil DESBLOQUEADO (fin de aplicación)');
+    }
+}
+
+function seleccionarColumnasPorPerfil(columnas) {
+    const checkboxes = document.querySelectorAll(
+        "#listaSelectorColumnas input[type='checkbox']"
+    );
+
+    // 1️⃣ Marcar checkboxes
+    checkboxes.forEach(cb => {
+        cb.checked = columnas.includes(cb.value);
+    });
+
+    // 2️⃣ SINCRONIZAR ESTADO INTERNO 🔥 (ESTA ERA LA FALLA)
+    estadoFiltros.columnasSeleccionadas = [...columnas];
+
+    // 3️⃣ Refrescar preview y resumen
+    actualizarPreviewColumnasSeleccionadas();
+    
+}
+
+function aplicarFiltrosPorPerfil(filtros) {
+    window.filtroExcluirCantidadCero = !!filtros.excluirCantidadCero;
+    window.filtroSoloCompra = !!filtros.soloCompra;
+}
+
+
+function marcarPerfilPersonalizado() {
+    console.log('🔔 marcarPerfilPersonalizado() llamada. perfilBloqueado:', perfilBloqueado, 'perfilActual:', perfilExportacionActivo);
+    
+    if (perfilBloqueado) {
+        console.log('⛔ Bloqueado - no se cambia a personalizado');
+        return;
+    }
+
+    console.log('✅ Cambiando a perfil PERSONALIZADO');
+    perfilExportacionActivo = "personalizado";
+
+    const selector = document.getElementById("selectorPerfilExportacion");
+    const badge = document.getElementById("badgePerfilActivo");
+
+    if (selector) selector.value = "personalizado";
+    if (badge) {
+        badge.textContent = "Personalizado";
+        badge.className = "badge badge-warning";
+    }
+}
+
+function onCambioSeleccionColumnaManual() {
+    if (perfilBloqueado) return;
+
+    const checkboxes = document.querySelectorAll(
+        "#listaSelectorColumnas input[type='checkbox']:checked"
+    );
+
+    estadoFiltros.columnasSeleccionadas = Array.from(checkboxes).map(
+        cb => cb.value
+    );
+
+    marcarPerfilPersonalizado();
+    actualizarPreviewColumnasSeleccionadas();
+    
+}
+
+function onCambioPerfilExportacion(perfil) {
+    if (perfil === "personalizado") return;
+    aplicarPerfilExportacion(perfil);
+}
+
+// ==========================================
 // 2. INICIALIZACIÓN
 // ==========================================
 window.addEventListener('load', () => {
@@ -2464,6 +2636,8 @@ function renderizarSelectorColumnas() {
  * Toggle selección de columna
  */
 function toggleColumnaFiltro(columna, seleccionada) {
+    console.log('📋 toggleColumnaFiltro:', columna, seleccionada ? 'MARCADA' : 'DESMARCADA');
+    
     if (seleccionada) {
         if (!estadoFiltros.columnasSeleccionadas.includes(columna)) {
             estadoFiltros.columnasSeleccionadas.push(columna);
@@ -2474,6 +2648,8 @@ function toggleColumnaFiltro(columna, seleccionada) {
     
     actualizarContadorColumnas();
     actualizarPreviewColumnasSeleccionadas();
+    marcarPerfilPersonalizado();
+    
 }
 
 /**
@@ -2493,6 +2669,9 @@ function toggleTodasColumnasAvanzado(seleccionar) {
     
     actualizarContadorColumnas();
     actualizarPreviewColumnasSeleccionadas();
+
+    // 🔥 CLAVE: si el usuario hace esto manualmente → Personalizado
+    if (!perfilBloqueado) { marcarPerfilPersonalizado(); }
 }
 
 // ==========================================

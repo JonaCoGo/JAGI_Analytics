@@ -170,6 +170,42 @@
                 </div>
                 <button onclick="cerrarModalFiltrosAvanzados()" class="text-white hover:text-gray-200 text-3xl font-light transition">&times;</button>
             </div>
+
+            <!-- ========================================= -->
+            <!-- PERFIL DE EXPORTACIÓN -->
+            <!-- ========================================= -->
+            <div class="p-6 border-b bg-white fade-in">
+                <label class="block text-sm font-semibold text-gray-700 mb-2">
+                    Perfil de exportación
+                </label>
+
+                <div class="flex items-center gap-3">
+                    <select
+                        id="selectorPerfilExportacion"
+                        onchange="onCambioPerfilExportacion(this.value)"
+                        class="flex-1 border rounded-lg px-4 py-2 bg-white focus:ring focus:ring-blue-200"
+                    >
+                        <option value="general" selected>📊 General</option>
+                        <option value="picking">📦 Picking (Bodega)</option>
+                        <option value="auditoria">🔍 Auditoría</option>
+                        <option value="compras">🛒 Compras</option>
+                        <option value="personalizado" disabled>⚙️ Personalizado</option>
+                    </select>
+
+                    <span
+                        id="badgePerfilActivo"
+                        class="badge badge-info"
+                        title="Perfil activo"
+                    >
+                        General
+                    </span>
+                </div>
+
+                <p class="text-xs text-gray-500 mt-2">
+                    Puedes usar un perfil predeterminado o personalizar manualmente el informe.
+                    Si modificas filtros o columnas, el perfil cambiará a <strong>Personalizado</strong>.
+                </p>
+            </div>
             
             <!-- Pestañas -->
             <div class="flex border-b bg-gray-50">
