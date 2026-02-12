@@ -160,6 +160,7 @@ class ReabastecimientoExportParams(ReabastecimientoMotorParams):
     columnas_seleccionadas: Optional[List[str]] = None
     tiendas_filtro: Optional[List[str]] = None
     observaciones_filtro: Optional[List[str]] = None
+    tipo_formato: Optional[str] = "general"
 
 
 # ============================================================

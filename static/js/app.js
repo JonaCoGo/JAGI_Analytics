@@ -38,7 +38,8 @@ const PERFILES_EXPORTACION = {
         filtros: {
             excluirCantidadCero: true,
             soloCompra: false
-        }
+        },
+        tipo_formato: "picking"
     },
 
     auditoria: {
@@ -2168,6 +2169,10 @@ async function exportarPreviewConColumnas() {
 async function exportarNuevoReporteConColumnas() {
     const params = obtenerParametrosReabastecimiento();
     params.columnas_seleccionadas = columnasSeleccionadas;
+    const config = PERFILES_EXPORTACION[perfilExportacionActivo];
+    if (config && config.tipo_formato) {
+        params.tipo_formato = config.tipo_formato;
+    }
 
     try {
         showNotification(CONFIG.MESSAGES.generandoReporte, 'success');

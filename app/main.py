@@ -454,7 +454,12 @@ async def generar_reabastecimiento(params: ReabastecimientoExportParams):
             )
         
         archivo = "reabastecimiento_jagi.xlsx"
-        exportar_excel_formateado(df, archivo, "Reabastecimiento")
+        # Determinar tipo de formato según parámetros
+        tipo_formato = "general"
+        if hasattr(params, 'tipo_formato') and params.tipo_formato:
+            tipo_formato = params.tipo_formato
+
+        exportar_excel_formateado(df, archivo, "Reabastecimiento", tipo_formato)
         
         logging.info(f"Reporte generado: {len(df)} registros")
         
@@ -641,7 +646,7 @@ async def generar_redistribucion(params: RedistribucionParams):
         if df.empty:
             raise HTTPException(status_code=404, detail="No hay redistribuciones sugeridas")
         archivo = "redistribucion_regional.xlsx"
-        exportar_excel_formateado(df, archivo, f"Redistribución {params.dias} días")
+        exportar_excel_formateado(df, archivo, f"Redistribución {params.dias} días", "general")
         return FileResponse(archivo, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=archivo)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -698,8 +703,9 @@ async def exportar_preview_personalizado(params: ExportarPreviewParams):
         nombre_archivo = params.nombre_reporte.replace(' ', '_').lower()
         archivo = f"{nombre_archivo}_personalizado.xlsx"
         
-        # Exportar con formato
-        exportar_excel_formateado(df, archivo, params.nombre_reporte)
+        # Determinar tipo de formato
+        tipo_formato = getattr(params, 'tipo_formato', 'general')
+        exportar_excel_formateado(df, archivo, params.nombre_reporte, tipo_formato, "general")
         
         return FileResponse(
             archivo, 
@@ -1239,7 +1245,7 @@ async def generar_existencias(params: ExistenciasParams):
                     raise HTTPException(status_code=404, detail="No hay datos con los filtros aplicados")
                 
                 archivo = "existencias_detalle.xlsx"
-                exportar_excel_formateado(df, archivo, f"Existencias - {len(df)} productos")
+                exportar_excel_formateado(df, archivo, f"Existencias - {len(df)} productos", "general")
         return FileResponse(archivo, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=archivo)
             
     except Exception as e:
@@ -1367,7 +1373,7 @@ async def generar_faltantes(params: FaltantesParams):
                     raise HTTPException(status_code=404, detail="No hay faltantes con los filtros aplicados")
                 
                 archivo = "faltantes_detalle.xlsx"
-                exportar_excel_formateado(df, archivo, f"Faltantes - {len(df)} productos")
+                exportar_excel_formateado(df, archivo, f"Faltantes - {len(df)} productos", "general")
         return FileResponse(archivo, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=archivo)
             
     except Exception as e:
