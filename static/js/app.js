@@ -2849,6 +2849,12 @@ async function exportarConFiltrosAvanzados() {
             observaciones_filtro: estadoFiltros.observacionesSeleccionadas,
             columnas_seleccionadas: estadoFiltros.columnasSeleccionadas
         };
+
+        // Incluir tipo_formato según perfil activo
+        const config = PERFILES_EXPORTACION[perfilExportacionActivo];
+        if (config && config.tipo_formato) {
+            params.tipo_formato = config.tipo_formato;
+        }
         
         const response = await fetch(`${CONFIG.API_URL}/reabastecimiento/exportar`, {
             method: 'POST',

@@ -582,6 +582,7 @@ async def preview_reabastecimiento_filtrado(
                 "guardar_debug_csv",
                 "incluir_fijos",
                 "excluir_sin_movimiento",
+                "tipo_formato",
             }
         )
 
