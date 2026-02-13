@@ -445,6 +445,14 @@ async def generar_reabastecimiento(params: ReabastecimientoExportParams):
             if columnas_validas:
                 df = df[columnas_validas]
                 logging.info(f"Filtro de columnas aplicado: {len(columnas_validas)} columnas")
+
+        # FILTRAR CANTIDAD CERO (para picking)
+        if hasattr(params, 'excluir_cantidad_cero') and params.excluir_cantidad_cero:
+            if 'cantidad_a_despachar' in df.columns:
+                cantidad_inicial = len(df)
+                df = df[df['cantidad_a_despachar'] > 0]
+                cantidad_filtrada = len(df)
+                logging.info(f"Filtro cantidad cero aplicado: {cantidad_inicial - cantidad_filtrada} registros eliminados")
         
         # Validación: asegurarse de que hay datos para exportar
         if df.empty:
@@ -583,6 +591,8 @@ async def preview_reabastecimiento_filtrado(
                 "incluir_fijos",
                 "excluir_sin_movimiento",
                 "tipo_formato",
+                "excluir_cantidad_cero",
+                "solo_compra",
             }
         )
 

@@ -161,7 +161,8 @@ class ReabastecimientoExportParams(ReabastecimientoMotorParams):
     tiendas_filtro: Optional[List[str]] = None
     observaciones_filtro: Optional[List[str]] = None
     tipo_formato: Optional[str] = "general"
-
+    excluir_cantidad_cero: Optional[bool] = False
+    solo_compra: Optional[bool] = False
 
 # ============================================================
 # RESPONSE MODELS

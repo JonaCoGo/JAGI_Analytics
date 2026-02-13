@@ -2855,6 +2855,16 @@ async function exportarConFiltrosAvanzados() {
         if (config && config.tipo_formato) {
             params.tipo_formato = config.tipo_formato;
         }
+
+        // Aplicar filtros de perfil
+        if (config && config.filtros) {
+            if (config.filtros.excluirCantidadCero) {
+                params.excluir_cantidad_cero = true;
+            }
+            if (config.filtros.soloCompra){
+                params.solo_compra = true;
+            }
+        }
         
         const response = await fetch(`${CONFIG.API_URL}/reabastecimiento/exportar`, {
             method: 'POST',
