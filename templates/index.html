@@ -1151,27 +1151,77 @@
 
                 <!-- Gestión de Tiendas Unificada -->
                 <div class="bg-white p-6 rounded-lg shadow-md md:col-span-2">
+                    <!-- Header con botones -->
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-xl font-semibold">🏪 Gestión de Tiendas</h3>
-                        <button onclick="abrirModalNuevaTienda()" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2">
-                            ➕ Nueva Tienda
-                        </button>
+                        <div class="flex gap-2">
+                            <!-- Botón Nueva Tienda (existente) -->
+                            <button 
+                                onclick="abrirModalNuevaTienda()" 
+                                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2"
+                            >
+                                ➕ Nueva Tienda
+                            </button>
+                            <!-- NUEVOS: Botones de activación masiva -->
+                            <button 
+                                onclick="activarTodasTiendas()" 
+                                class="bg-green-600 text-white px-3 py-2 rounded hover:bg-green-700 text-sm"
+                                title="Activar todas las tiendas"
+                            >
+                                ✅ Activar Todas
+                            </button>
+                            <button 
+                                onclick="desactivarTodasTiendas()" 
+                                class="bg-red-600 text-white px-3 py-2 rounded hover:bg-red-700 text-sm"
+                                title="Desactivar todas las tiendas"
+                            >
+                                ⛔ Desactivar Todas
+                            </button>
+                        </div>
                     </div>
                     
                     <!-- Estadísticas -->
-                    <div class="grid grid-cols-3 gap-3 mb-4">
-                        <div class="p-3 bg-blue-50 rounded flex justify-between items-center">
-                            <span class="text-sm font-medium">Total tiendas</span>
-                            <span class="font-bold text-blue-600 text-xl" id="stat-tiendas-config">-</span>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                        <!-- Estadísticas existentes -->
+                        <div class="p-3 bg-blue-50 rounded">
+                            <div class="text-xs text-gray-600 mb-1">Total tiendas</div>
+                            <div class="font-bold text-blue-600 text-2xl" id="stat-tiendas-total">-</div>
                         </div>
-                        <div class="p-3 bg-green-50 rounded flex justify-between items-center">
-                            <span class="text-sm font-medium">Tiendas fijas</span>
-                            <span class="font-bold text-green-600 text-xl" id="stat-tiendas-fijas">-</span>
+                        
+                        <!-- Activas -->
+                        <div class="p-3 bg-green-50 rounded">
+                            <div class="text-xs text-gray-600 mb-1">Activas</div>
+                            <div class="font-bold text-green-600 text-2xl" id="stat-tiendas-activas">-</div>
                         </div>
-                        <div class="p-3 bg-purple-50 rounded flex justify-between items-center">
-                            <span class="text-sm font-medium">Regiones</span>
-                            <span class="font-bold text-purple-600 text-xl" id="stat-regiones">-</span>
+                        
+                        <!-- Inactivas -->
+                        <div class="p-3 bg-red-50 rounded">
+                            <div class="text-xs text-gray-600 mb-1">Inactivas</div>
+                            <div class="font-bold text-red-600 text-2xl" id="stat-tiendas-inactivas">-</div>
                         </div>
+                        
+                        <!-- Existente: Fijas -->
+                        <div class="p-3 bg-amber-50 rounded">
+                            <div class="text-xs text-gray-600 mb-1">Fijas</div>
+                            <div class="font-bold text-amber-600 text-2xl" id="stat-tiendas-fijas">-</div>
+                        </div>
+                        
+                        <!-- Existente: Regiones -->
+                        <div class="p-3 bg-purple-50 rounded">
+                            <div class="text-xs text-gray-600 mb-1">Regiones</div>
+                            <div class="font-bold text-purple-600 text-2xl" id="stat-regiones">-</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Filtro por región -->
+                    <div class="mb-3">
+                        <select 
+                            id="filtroRegionTiendas" 
+                            onchange="filtrarTiendasPorRegion(this.value)"
+                            class="w-full p-2 border rounded text-sm"
+                        >
+                            <option value="">📍 Todas las regiones</option>
+                        </select>
                     </div>
                     
                     <!-- Tabla de Tiendas -->
@@ -1179,21 +1229,31 @@
                         <table class="w-full text-sm">
                             <thead class="bg-gray-100 sticky top-0">
                                 <tr>
+                                    <!-- NUEVA: Columna Estado -->
+                                    <th class="p-2 text-left">Estado</th>
                                     <th class="p-2 text-left">Nombre</th>
                                     <th class="p-2 text-left">Nombre Original</th>
-                                    <th class="p-2 text-left">Región</th>
+                                    <th class="p-2 text-center">Región</th>
                                     <th class="p-2 text-center">Fija</th>
+                                    <!-- MODIFICADA: Columna Acciones -->
                                     <th class="p-2 text-center">Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="listaTiendas">
-                                <tr><td colspan="5" class="p-3 text-center text-gray-500">Cargando...</td></tr>
+                                <tr>
+                                    <td colspan="6" class="p-3 text-center text-gray-500">
+                                        Cargando...
+                                    </td>
+                                </tr>
                             </tbody>
                         </table>
                     </div>
+                    
+                    <!-- Nota informativa -->
+                    <div class="mt-3 text-xs text-gray-500 text-center">
+                        💡 Las tiendas inactivas no aparecerán en reportes de reabastecimiento ni redistribución
+                    </div>
                 </div>
-            </div>
-        </div>
 
                 <!-- Modal para Agregar/Editar Tienda -->
                 <div id="modalTienda" class="modal fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">

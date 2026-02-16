@@ -1136,14 +1136,63 @@ async function eliminarCodigo(tipo, codigo) {
 
 let tiendaEnEdicion = null;
 let modalTiendaAbierto = false;
+let tiendasData = [];
+let regionesTiendas = [];
+let filtroRegionActual = null;
 
+/**
+ * Carga la lista de tiendas con su estado
+ * Mantiene compatibilidad con código existente
+ */
 async function cargarTiendas() {
     try {
         const response = await fetch(`${CONFIG.API_URL}/config/tiendas`);
         const result = await response.json();
         
         if (result.success) {
-            renderTablaTiendas(result.datos);
+            // Guardar en cache
+            tiendasData = result.datos || result.tiendas || [];
+            
+            // Actualizar estadísticas si existen los elementos
+            if (result.total !== undefined) {
+                actualizarElemento('stat-tiendas-total', result.total);
+                actualizarElemento('stat-tiendas-config', result.total); // Compatibilidad
+            }
+            if (result.activas !== undefined) {
+                actualizarElemento('stat-tiendas-activas', result.activas);
+            }
+            if (result.inactivas !== undefined) {
+                actualizarElemento('stat-tiendas-inactivas', result.inactivas);
+            }
+            
+            // Stats adicionales
+            const fijas = tiendasData.filter(t => t.fija === 1).length;
+            actualizarElemento('stat-tiendas-fijas', fijas);
+            
+            const regiones = [...new Set(tiendasData.map(t => t.region))].length;
+            actualizarElemento('stat-regiones', regiones);
+            
+            // Extraer regiones únicas para filtro
+            regionesTiendas = [...new Set(tiendasData.map(t => t.region))].sort();
+            
+            // Poblar selector de regiones si existe
+            const select = document.getElementById('filtroRegionTiendas');
+            if (select) {
+                select.innerHTML = '<option value="">📍 Todas las regiones</option>';
+                regionesTiendas.forEach(region => {
+                    select.innerHTML += `<option value="${region}">${region}</option>`;
+                });
+                // Mantener filtro actual si existe
+                if (filtroRegionActual) {
+                    select.value = filtroRegionActual;
+                }
+            }
+            
+            // Renderizar tabla (con filtro si aplica)
+            renderTablaTiendas(filtroRegionActual ? 
+                tiendasData.filter(t => t.region === filtroRegionActual) : 
+                tiendasData
+            );
         } else {
             showNotification('Error al cargar tiendas', 'error');
         }
@@ -1153,35 +1202,81 @@ async function cargarTiendas() {
     }
 }
 
+/**
+ * Renderiza la tabla de tiendas
+ * Agrega columna estado y botón toggle
+ */
 function renderTablaTiendas(tiendas) {
     const tbody = document.getElementById('listaTiendas');
     if (!tbody) return;
     
     if (!tiendas || tiendas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="p-3 text-center text-gray-500">Sin tiendas registradas</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="p-3 text-center text-gray-500">Sin tiendas registradas</td></tr>';
         return;
     }
 
-    tbody.innerHTML = tiendas.map(tienda => `
-        <tr class="hover:bg-gray-50">
-            <td class="p-2 border-b">${tienda.clean_name || tienda.raw_name}</td>
-            <td class="p-2 border-b text-xs text-gray-600">${tienda.raw_name}</td>
-            <td class="p-2 border-b">${tienda.region || '-'}</td>
-            <td class="p-2 border-b text-center">
-                ${tienda.fija ? '<span class="text-green-600">✓</span>' : '<span class="text-gray-400">-</span>'}
-            </td>
-            <td class="p-2 border-b text-center">
-                <button onclick='abrirModalEditarTienda(${JSON.stringify(tienda).replace(/'/g, "&#39;")})' 
-                    class="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 mr-1">
-                    ✏️
-                </button>
-                <button onclick='eliminarTienda("${tienda.raw_name.replace(/'/g, "\\'")}")' 
-                    class="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600">
-                    🗑️
-                </button>
-            </td>
-        </tr>
-    `).join('');
+    tbody.innerHTML = tiendas.map(tienda => {
+        // Determinar estado activo (por defecto 1 si no existe)
+        const activa = tienda.activa === undefined ? 1 : tienda.activa;
+        const estadoClass = activa ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800';
+        const estadoIcon = activa ? '✅' : '⛔';
+        const estadoText = activa ? 'Activa' : 'Inactiva';
+        
+        return `
+            <tr class="hover:bg-gray-50 ${activa ? '' : 'opacity-60'}">
+                <!-- NUEVA: Columna Estado -->
+                <td class="p-2 border-b">
+                    <span class="${estadoClass} px-2 py-1 rounded text-xs font-semibold whitespace-nowrap">
+                        ${estadoIcon} ${estadoText}
+                    </span>
+                </td>
+                
+                <!-- Columnas existentes -->
+                <td class="p-2 border-b">${tienda.clean_name || tienda.raw_name}</td>
+                <td class="p-2 border-b text-xs text-gray-600">${tienda.raw_name}</td>
+                <td class="p-2 border-b">${tienda.region || '-'}</td>
+                <td class="p-2 border-b text-center">
+                    ${tienda.fija ? '<span class="text-green-600">✓</span>' : '<span class="text-gray-400">-</span>'}
+                </td>
+                
+                <!-- MODIFICADA: Columna Acciones con botón toggle adicional -->
+                <td class="p-2 border-b text-center">
+                    <div class="flex gap-1 justify-center">
+                        <!-- Botón Editar (existente) -->
+                        <button 
+                            onclick='abrirModalEditarTienda(${JSON.stringify(tienda).replace(/'/g, "&#39;")})' 
+                            class="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600"
+                            title="Editar tienda"
+                        >
+                            ✏️
+                        </button>
+                        
+                        <!-- NUEVO: Botón Toggle -->
+                        <button 
+                            onclick='toggleTienda("${tienda.clean_name || tienda.raw_name}")'
+                            class="px-2 py-1 rounded text-xs font-medium ${
+                                activa 
+                                ? 'bg-orange-500 hover:bg-orange-600 text-white' 
+                                : 'bg-green-500 hover:bg-green-600 text-white'
+                            }"
+                            title="${activa ? 'Desactivar tienda' : 'Activar tienda'}"
+                        >
+                            ${activa ? '⛔' : '✅'}
+                        </button>
+                        
+                        <!-- Botón Eliminar (existente) -->
+                        <button 
+                            onclick='eliminarTienda("${tienda.raw_name.replace(/'/g, "\\'")}")' 
+                            class="bg-red-500 text-white px-2 py-1 rounded text-xs hover:bg-red-600"
+                            title="Eliminar tienda"
+                        >
+                            🗑️
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 function abrirModalNuevaTienda() {
@@ -1281,8 +1376,10 @@ async function guardarTienda() {
         if (result.success) {
             showNotification(tiendaEnEdicion ? 'Tienda actualizada correctamente ✅' : 'Tienda agregada correctamente ✅');
             cerrarModalTienda();
-            cargarTiendas();
-            cargarConfiguraciones(); // Actualizar stats
+            await cargarTiendas();  // Recargar tiendas
+            if (typeof cargarConfiguraciones === 'function') {
+                await cargarConfiguraciones(); // Actualizar stats si la función existe
+            }
         } else {
             showNotification(result.error || 'Error al guardar tienda', 'error');
         }
@@ -1305,8 +1402,10 @@ async function eliminarTienda(rawName) {
         
         if (result.success) {
             showNotification('Tienda eliminada correctamente ✅');
-            cargarTiendas();
-            cargarConfiguraciones(); // Actualizar stats
+            await cargarTiendas();  // Recargar tiendas
+            if (typeof cargarConfiguraciones === 'function') {
+                await cargarConfiguraciones(); // Actualizar stats si la función existe
+            }
         } else {
             showNotification(result.error || 'Error al eliminar tienda', 'error');
         }
@@ -1315,6 +1414,117 @@ async function eliminarTienda(rawName) {
         showNotification(CONFIG.MESSAGES.errorConexion, 'error');
     }
 }
+
+// ==========================================
+// Toggle y Filtros
+// ==========================================
+
+/**
+ * Activa/desactiva una tienda individual
+ */
+async function toggleTienda(nombreTienda) {
+    try {
+        showNotification('Actualizando...', 'info');
+        
+        const response = await fetch(
+            `${CONFIG.API_URL}/config/tiendas/${encodeURIComponent(nombreTienda)}/toggle`,
+            { method: 'POST' }
+        );
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(result.message, 'success');
+            
+            // Actualizar el estado en el cache local
+            const tienda = tiendasData.find(t => (t.clean_name || t.raw_name) === nombreTienda);
+            if (tienda) {
+                tienda.activa = result.activa;
+            }
+            
+            // Recargar tiendas para actualizar stats
+            await cargarTiendas();
+        } else {
+            showNotification('Error al cambiar estado', 'error');
+        }
+    } catch (error) {
+        console.error('Error al cambiar estado de tienda:', error);
+        showNotification('Error al cambiar estado', 'error');
+    }
+}
+
+/**
+ * Activa todas las tiendas
+ */
+async function activarTodasTiendas() {
+    if (!confirm('¿Activar todas las tiendas?')) return;
+    
+    try {
+        showNotification('Activando todas las tiendas...', 'info');
+        
+        const response = await fetch(
+            `${CONFIG.API_URL}/config/tiendas/activar-todas`,
+            { method: 'POST' }
+        );
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(`✅ ${result.count} tiendas activadas`, 'success');
+            await cargarTiendas();
+        } else {
+            showNotification('Error al activar tiendas', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error al activar tiendas', 'error');
+    }
+}
+
+/**
+ * Desactiva todas las tiendas
+ */
+async function desactivarTodasTiendas() {
+    if (!confirm('⚠️ ¿Desactivar TODAS las tiendas?\n\nEsto impedirá generar reabastecimientos hasta que las reactives.')) {
+        return;
+    }
+    
+    try {
+        showNotification('Desactivando todas las tiendas...', 'info');
+        
+        const response = await fetch(
+            `${CONFIG.API_URL}/config/tiendas/desactivar-todas`,
+            { method: 'POST' }
+        );
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showNotification(`⛔ ${result.count} tiendas desactivadas`, 'warning');
+            await cargarTiendas();
+        } else {
+            showNotification('Error al desactivar tiendas', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error al desactivar tiendas', 'error');
+    }
+}
+
+/**
+ * Filtra tiendas por región
+ */
+function filtrarTiendasPorRegion(region) {
+    filtroRegionActual = region || null;
+    const tiendasFiltradas = filtroRegionActual ? 
+        tiendasData.filter(t => t.region === filtroRegionActual) : 
+        tiendasData;
+    renderTablaTiendas(tiendasFiltradas);
+}
+
+// ===========================
+// EVENT LISTENERS EXISTENTES
+// ===========================
 
 // Cerrar modal al hacer clic fuera de él
 window.addEventListener('click', (e) => {

@@ -43,10 +43,19 @@ def get_reabastecimiento_avanzado(
             "SELECT cod_barras FROM codigos_excluidos", conn
         )["cod_barras"].dropna().astype(str).tolist()
 
-        config_tiendas = pd.read_sql(
-            "SELECT raw_name, clean_name, region, fija, tipo_tienda FROM config_tiendas",
-            conn
-        )
+        config_tiendas = pd.read_sql("""
+            SELECT 
+                raw_name, 
+                clean_name, 
+                region, 
+                fija, 
+                tipo_tienda,
+                COALESCE(activa, 1) as activa
+            FROM config_tiendas
+            WHERE COALESCE(activa, 1) = 1
+        """, conn)
+
+        # logging.info(f"🏪 Tiendas activas: {len(config_tiendas)}")
 
         # -------------------------
         # STOCK TOTAL REAL DE BODEGA (CLAVE)
@@ -133,7 +142,9 @@ def get_reabastecimiento_avanzado(
         """
         df_exp = pd.read_sql(query_exp, conn)
 
-        tiendas_all = config_tiendas["clean_name"].dropna().unique().tolist()
+        tiendas_all = config_tiendas[
+            config_tiendas["activa"] == 1
+        ]["clean_name"].dropna().unique().tolist()
 
         info_ref = pd.read_sql("""
             SELECT DISTINCT c_barra, d_marca, d_color_proveedor AS color

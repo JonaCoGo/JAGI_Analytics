@@ -924,21 +924,41 @@ async def obtener_estadisticas_dashboard():
         }    
 
 @app.get("/config/tiendas")
-async def obtener_todas_tiendas():
-    """Obtiene listado completo de tiendas"""
+async def obtener_tiendas():
+    """
+    Obtiene la lista completa de tiendas con su estado.
+    VERSIÓN MEJORADA - Mantiene compatibilidad con código anterior
+    """
     try:
         with get_connection() as conn:
             df = pd.read_sql("""
-                SELECT raw_name, clean_name, region, fija
+                SELECT 
+                    raw_name,
+                    clean_name,
+                    region,
+                    fija,
+                    tipo_tienda,
+                    COALESCE(activa, 1) as activa
                 FROM config_tiendas
-                ORDER BY clean_name
+                ORDER BY region, clean_name
             """, conn)
-            
-            tiendas = df.to_dict(orient='records')
-        return JSONResponse({"success": True, "datos": tiendas})
+        
+        tiendas = df.to_dict(orient='records')
+        
+        return JSONResponse({
+            "success": True,
+            "datos": tiendas,
+            "tiendas": tiendas,
+            "total": len(tiendas),
+            "activas": len([t for t in tiendas if t['activa'] == 1]),
+            "inactivas": len([t for t in tiendas if t['activa'] == 0])
+        })
     except Exception as e:
         logging.error(f"Error al obtener tiendas: {e}")
-        return JSONResponse({"success": False, "error": str(e)})
+        return JSONResponse({
+            "success": False, 
+            "error": str(e)
+        }, status_code=500)
 
 @app.post("/config/tiendas/agregar")
 async def agregar_tienda(tienda: TiendaCreate):
@@ -1041,6 +1061,110 @@ async def obtener_regiones_disponibles():
         return JSONResponse({"success": True, "datos": df['region'].tolist()})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
+    
+@app.post("/config/tiendas/{nombre_tienda}/toggle")
+async def toggle_tienda(nombre_tienda: str):
+    """
+    Activa/desactiva una tienda.
+    
+    Args:
+        nombre_tienda: Nombre limpio de la tienda (clean_name)
+    
+    Returns:
+        JSON con el nuevo estado
+    """
+    try:
+        nombre_tienda = unquote(nombre_tienda)
+        
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Obtener estado actual
+            cursor.execute("""
+                SELECT COALESCE(activa, 1) as activa 
+                FROM config_tiendas 
+                WHERE clean_name = ?
+            """, (nombre_tienda,))
+            
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Tienda no encontrada")
+            
+            estado_actual = row[0]
+            nuevo_estado = 0 if estado_actual == 1 else 1
+            
+            # Actualizar estado
+            cursor.execute("""
+                UPDATE config_tiendas 
+                SET activa = ? 
+                WHERE clean_name = ?
+            """, (nuevo_estado, nombre_tienda))
+            
+            conn.commit()
+            
+            logging.info(f"{'✅ Activada' if nuevo_estado == 1 else '⛔ Desactivada'} tienda: {nombre_tienda}")
+            
+            return JSONResponse({
+                "success": True,
+                "tienda": nombre_tienda,
+                "activa": nuevo_estado,
+                "message": f"Tienda {'activada' if nuevo_estado == 1 else 'desactivada'} correctamente"
+            })
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error al cambiar estado de tienda: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/config/tiendas/activar-todas")
+async def activar_todas_tiendas():
+    """
+    Activa todas las tiendas.
+    """
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE config_tiendas SET activa = 1")
+            conn.commit()
+            count = cursor.rowcount
+            
+        logging.info(f"✅ Activadas {count} tiendas")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"{count} tiendas activadas",
+            "count": count
+        })
+    except Exception as e:
+        logging.error(f"Error al activar todas las tiendas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/config/tiendas/desactivar-todas")
+async def desactivar_todas_tiendas():
+    """
+    Desactiva todas las tiendas.
+    PRECAUCIÓN: Esto impedirá que se genere reabastecimiento.
+    """
+    try:
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE config_tiendas SET activa = 0")
+            conn.commit()
+            count = cursor.rowcount
+        
+        logging.warning(f"⚠️ Desactivadas {count} tiendas")
+        
+        return JSONResponse({
+            "success": True,
+            "message": f"{count} tiendas desactivadas",
+            "count": count
+        })
+    except Exception as e:
+        logging.error(f"Error al desactivar todas las tiendas: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/validar-codigo-lanzamiento/{codigo:path}")
 async def validar_codigo_lanzamiento(codigo: str):
