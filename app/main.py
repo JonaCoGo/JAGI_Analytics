@@ -14,7 +14,7 @@ setup_logging()
 import shutil
 import pandas as pd
 import logging
-from app.database import get_connection, test_connection, get_db_info, DATA_DIR, date_subtract_days, date_format_convert
+from app.database import get_connection, text, test_connection, get_db_info, DATA_DIR, date_subtract_days, date_format_convert
 from app.consultas import(
     get_reabastecimiento_avanzado,
     get_redistribucion_regional,
@@ -925,10 +925,7 @@ async def obtener_estadisticas_dashboard():
 
 @app.get("/config/tiendas")
 async def obtener_tiendas():
-    """
-    Obtiene la lista completa de tiendas con su estado.
-    VERSIÓN MEJORADA - Mantiene compatibilidad con código anterior
-    """
+    """Obtiene la lista completa de tiendas con su estado."""
     try:
         with get_connection() as conn:
             df = pd.read_sql("""
@@ -955,216 +952,233 @@ async def obtener_tiendas():
         })
     except Exception as e:
         logging.error(f"Error al obtener tiendas: {e}")
-        return JSONResponse({
-            "success": False, 
-            "error": str(e)
-        }, status_code=500)
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
 
 @app.post("/config/tiendas/agregar")
-async def agregar_tienda(tienda: TiendaCreate):
-    """Agrega una nueva tienda a la configuración"""
+async def agregar_tienda(tienda: dict):
+    """Agregar nueva tienda"""
     try:
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
+            # Verificar que no exista
+            result = conn.execute(
+                text("SELECT 1 FROM config_tiendas WHERE raw_name = :raw_name"),
+                {"raw_name": tienda.get('raw_name')}
+            )
+            if result.fetchone():
+                return JSONResponse({
+                    "success": False,
+                    "error": "La tienda ya existe"
+                }, status_code=400)
             
-            # Verificar si ya existe
-            cursor.execute("SELECT COUNT(*) FROM config_tiendas WHERE raw_name = ?", (tienda.raw_name,))
-            if cursor.fetchone()[0] > 0:
-                return JSONResponse({"success": False, "error": "La tienda ya existe"}, status_code=400)
-            
-            cursor.execute("""
-                INSERT INTO config_tiendas (raw_name, clean_name, region, fija)
-                VALUES (?, ?, ?, ?)
-            """, (tienda.raw_name, tienda.clean_name, tienda.region, 1 if tienda.fija else 0))
+            # Insertar
+            conn.execute(
+                text("""
+                    INSERT INTO config_tiendas 
+                    (raw_name, clean_name, region, fija, tipo_tienda, activa)
+                    VALUES (:raw_name, :clean_name, :region, :fija, :tipo_tienda, 1)
+                """),
+                {
+                    "raw_name": tienda.get('raw_name'),
+                    "clean_name": tienda.get('clean_name'),
+                    "region": tienda.get('region'),
+                    "fija": 1 if tienda.get('fija') else 0,
+                    "tipo_tienda": tienda.get('tipo_tienda', 'NORMAL')
+                }
+            )
             
             conn.commit()
             
+        logging.info(f"➕ Tienda agregada: {tienda.get('raw_name')}")
         return JSONResponse({"success": True, "message": "Tienda agregada correctamente"})
+            
     except Exception as e:
         logging.error(f"Error al agregar tienda: {e}")
-        return JSONResponse({"success": False, "error": str(e)})
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-@app.put("/config/tiendas/{raw_name:path}")
-async def actualizar_tienda(raw_name: str, tienda: TiendaUpdate):
-    """Actualiza los datos de una tienda"""
+
+@app.put("/config/tiendas/{raw_name}")
+async def actualizar_tienda(raw_name: str, tienda: dict):
+    """Actualizar tienda existente"""
     try:
         raw_name = unquote(raw_name)
+        
+        logging.info(f"✏️ Intentando actualizar tienda: {raw_name}")
+        logging.info(f"Datos recibidos: {tienda}")
+        
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
+            # Verificar que existe
+            result = conn.execute(
+                text("SELECT 1 FROM config_tiendas WHERE raw_name = :raw_name"),
+                {"raw_name": raw_name}
+            )
+            if not result.fetchone():
+                logging.error(f"Tienda no encontrada: {raw_name}")
+                return JSONResponse({
+                    "success": False,
+                    "error": "Tienda no encontrada"
+                }, status_code=404)
             
-            updates = []
-            params = []
+            # Actualizar
+            conn.execute(
+                text("""
+                    UPDATE config_tiendas 
+                    SET clean_name = :clean_name,
+                        region = :region,
+                        fija = :fija,
+                        tipo_tienda = :tipo_tienda
+                    WHERE raw_name = :raw_name
+                """),
+                {
+                    "clean_name": tienda.get('clean_name'),
+                    "region": tienda.get('region'),
+                    "fija": 1 if tienda.get('fija') else 0,
+                    "tipo_tienda": tienda.get('tipo_tienda', 'NORMAL'),
+                    "raw_name": raw_name
+                }
+            )
             
-            if tienda.clean_name is not None:
-                updates.append("clean_name = ?")
-                params.append(tienda.clean_name)
-            
-            if tienda.region is not None:
-                updates.append("region = ?")
-                params.append(tienda.region)
-            
-            if tienda.fija is not None:
-                updates.append("fija = ?")
-                params.append(1 if tienda.fija else 0)
-            
-            if not updates:
-                return JSONResponse({"success": False, "error": "No hay datos para actualizar"})
-            
-            params.append(raw_name)
-            query = f"UPDATE config_tiendas SET {', '.join(updates)} WHERE raw_name = ?"
-            
-            cursor.execute(query, params)
-            filas = cursor.rowcount
             conn.commit()
             
-            if filas == 0:
-                return JSONResponse({"success": False, "error": "Tienda no encontrada"}, status_code=404)
-        
+        logging.info(f"✅ Tienda actualizada exitosamente: {raw_name}")
         return JSONResponse({"success": True, "message": "Tienda actualizada correctamente"})
+            
     except Exception as e:
-        logging.error(f"Error al actualizar tienda: {e}")
-        return JSONResponse({"success": False, "error": str(e)})
+        logging.error(f"❌ Error al actualizar tienda: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-@app.delete("/config/tiendas/{raw_name:path}")
+
+@app.delete("/config/tiendas/{raw_name}")
 async def eliminar_tienda(raw_name: str):
-    """Elimina una tienda de la configuración"""
+    """Eliminar tienda"""
     try:
         raw_name = unquote(raw_name)
-        logging.info(f"🗑️ Eliminando tienda: {raw_name}")
         
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
+            # Verificar que existe
+            result = conn.execute(
+                text("SELECT 1 FROM config_tiendas WHERE raw_name = :raw_name"),
+                {"raw_name": raw_name}
+            )
+            if not result.fetchone():
+                return JSONResponse({
+                    "success": False,
+                    "error": "Tienda no encontrada"
+                }, status_code=404)
             
-            cursor.execute("DELETE FROM config_tiendas WHERE raw_name = ?", (raw_name,))
-            filas = cursor.rowcount
+            # Eliminar
+            conn.execute(
+                text("DELETE FROM config_tiendas WHERE raw_name = :raw_name"),
+                {"raw_name": raw_name}
+            )
             conn.commit()
             
-            if filas == 0:
-                return JSONResponse({"success": False, "error": "Tienda no encontrada"}, status_code=404)
+        logging.info(f"🗑️ Tienda eliminada: {raw_name}")
+        return JSONResponse({"success": True, "message": "Tienda eliminada correctamente"})
             
-        return JSONResponse({"success": True, "message": f"Tienda {raw_name} eliminada"})
     except Exception as e:
         logging.error(f"Error al eliminar tienda: {e}")
-        return JSONResponse({"success": False, "error": str(e)})
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
-@app.get("/config/regiones-disponibles")
-async def obtener_regiones_disponibles():
-    """Obtiene lista de regiones únicas"""
-    try:
-        with get_connection() as conn:
-            df = pd.read_sql("""
-                SELECT DISTINCT region
-                FROM config_tiendas
-                WHERE region IS NOT NULL AND region != ''
-                ORDER BY region
-            """, conn)
-        return JSONResponse({"success": True, "datos": df['region'].tolist()})
-    except Exception as e:
-        return JSONResponse({"success": False, "error": str(e)})
-    
+
 @app.post("/config/tiendas/{nombre_tienda}/toggle")
 async def toggle_tienda(nombre_tienda: str):
-    """
-    Activa/desactiva una tienda.
-    
-    Args:
-        nombre_tienda: Nombre limpio de la tienda (clean_name)
-    
-    Returns:
-        JSON con el nuevo estado
-    """
+    """Activa/desactiva una tienda."""
     try:
         nombre_tienda = unquote(nombre_tienda)
         
+        logging.info(f"🔄 Toggle tienda solicitado: {nombre_tienda}")
+        
         with get_connection() as conn:
-            cursor = conn.cursor()
+            # Buscar por clean_name O raw_name
+            result = conn.execute(
+                text("""
+                    SELECT COALESCE(activa, 1) as activa, raw_name, clean_name
+                    FROM config_tiendas 
+                    WHERE clean_name = :nombre OR raw_name = :nombre
+                """),
+                {"nombre": nombre_tienda}
+            )
             
-            # Obtener estado actual
-            cursor.execute("""
-                SELECT COALESCE(activa, 1) as activa 
-                FROM config_tiendas 
-                WHERE clean_name = ?
-            """, (nombre_tienda,))
-            
-            row = cursor.fetchone()
+            row = result.fetchone()
             if not row:
-                raise HTTPException(status_code=404, detail="Tienda no encontrada")
+                logging.error(f"❌ Tienda no encontrada: {nombre_tienda}")
+                return JSONResponse({
+                    "success": False,
+                    "error": f"Tienda no encontrada: {nombre_tienda}"
+                }, status_code=404)
             
-            estado_actual = row[0]
+            estado_actual, raw_name, clean_name = row
             nuevo_estado = 0 if estado_actual == 1 else 1
             
-            # Actualizar estado
-            cursor.execute("""
-                UPDATE config_tiendas 
-                SET activa = ? 
-                WHERE clean_name = ?
-            """, (nuevo_estado, nombre_tienda))
+            logging.info(f"Estado actual: {estado_actual}, Nuevo estado: {nuevo_estado}")
+            
+            # Actualizar por raw_name
+            result = conn.execute(
+                text("""
+                    UPDATE config_tiendas 
+                    SET activa = :activa
+                    WHERE raw_name = :raw_name
+                """),
+                {"activa": nuevo_estado, "raw_name": raw_name}
+            )
+            
+            logging.info(f"Filas afectadas: {result.rowcount}")
             
             conn.commit()
             
-            logging.info(f"{'✅ Activada' if nuevo_estado == 1 else '⛔ Desactivada'} tienda: {nombre_tienda}")
+        logging.info(f"{'✅ Activada' if nuevo_estado == 1 else '⛔ Desactivada'} tienda: {clean_name or raw_name}")
+        
+        return JSONResponse({
+            "success": True,
+            "tienda": clean_name or raw_name,
+            "activa": nuevo_estado,
+            "message": f"Tienda {'activada' if nuevo_estado == 1 else 'desactivada'} correctamente"
+        })
             
-            return JSONResponse({
-                "success": True,
-                "tienda": nombre_tienda,
-                "activa": nuevo_estado,
-                "message": f"Tienda {'activada' if nuevo_estado == 1 else 'desactivada'} correctamente"
-            })
-            
-    except HTTPException:
-        raise
     except Exception as e:
-        logging.error(f"Error al cambiar estado de tienda: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.error(f"❌ Error al cambiar estado de tienda: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @app.post("/config/tiendas/activar-todas")
 async def activar_todas_tiendas():
-    """
-    Activa todas las tiendas.
-    """
+    """Activa todas las tiendas."""
     try:
         with get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE config_tiendas SET activa = 1")
+            result = conn.execute(text("UPDATE config_tiendas SET activa = 1"))
+            count = result.rowcount
             conn.commit()
-            count = cursor.rowcount
             
         logging.info(f"✅ Activadas {count} tiendas")
+        return JSONResponse({"success": True, "message": f"{count} tiendas activadas", "count": count})
         
-        return JSONResponse({
-            "success": True,
-            "message": f"{count} tiendas activadas",
-            "count": count
-        })
     except Exception as e:
         logging.error(f"Error al activar todas las tiendas: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 
 @app.post("/config/tiendas/desactivar-todas")
 async def desactivar_todas_tiendas():
-    """
-    Desactiva todas las tiendas.
-    PRECAUCIÓN: Esto impedirá que se genere reabastecimiento.
-    """
+    """Desactiva todas las tiendas."""
     try:
         with get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("UPDATE config_tiendas SET activa = 0")
+            result = conn.execute(text("UPDATE config_tiendas SET activa = 0"))
+            count = result.rowcount
             conn.commit()
-            count = cursor.rowcount
         
         logging.warning(f"⚠️ Desactivadas {count} tiendas")
+        return JSONResponse({"success": True, "message": f"{count} tiendas desactivadas", "count": count})
         
-        return JSONResponse({
-            "success": True,
-            "message": f"{count} tiendas desactivadas",
-            "count": count
-        })
     except Exception as e:
         logging.error(f"Error al desactivar todas las tiendas: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
 
 @app.get("/validar-codigo-lanzamiento/{codigo:path}")
 async def validar_codigo_lanzamiento(codigo: str):

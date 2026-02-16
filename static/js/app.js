@@ -1423,34 +1423,77 @@ async function eliminarTienda(rawName) {
  * Activa/desactiva una tienda individual
  */
 async function toggleTienda(nombreTienda) {
+    // DEBUG 1: Verificar que la función se llama
+    console.log('='.repeat(60));
+    console.log('🔍 DEBUG - toggleTienda llamada');
+    console.log('🔍 Nombre recibido:', nombreTienda);
+    console.log('🔍 Tipo:', typeof nombreTienda);
+    console.log('='.repeat(60));
+    
+    // Verificar que CONFIG.API_URL existe
+    if (!CONFIG || !CONFIG.API_URL) {
+        console.error('❌ CONFIG.API_URL no está definido');
+        alert('Error: CONFIG.API_URL no está definido');
+        return;
+    }
+    
     try {
+        const url = `${CONFIG.API_URL}/config/tiendas/${encodeURIComponent(nombreTienda)}/toggle`;
+        
+        console.log('🔍 URL completa:', url);
+        console.log('🔍 Iniciando fetch...');
+        
         showNotification('Actualizando...', 'info');
         
-        const response = await fetch(
-            `${CONFIG.API_URL}/config/tiendas/${encodeURIComponent(nombreTienda)}/toggle`,
-            { method: 'POST' }
-        );
+        const response = await fetch(url, { 
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        console.log('🔍 Response status:', response.status);
+        console.log('🔍 Response ok:', response.ok);
         
         const result = await response.json();
         
+        console.log('🔍 Result:', result);
+        
         if (result.success) {
+            console.log('✅ Toggle exitoso');
             showNotification(result.message, 'success');
             
             // Actualizar el estado en el cache local
-            const tienda = tiendasData.find(t => (t.clean_name || t.raw_name) === nombreTienda);
+            const tienda = tiendasData.find(t => 
+                (t.clean_name === nombreTienda) || (t.raw_name === nombreTienda)
+            );
+            
             if (tienda) {
+                console.log('🔍 Tienda encontrada en cache, actualizando...');
                 tienda.activa = result.activa;
+            } else {
+                console.warn('⚠️ Tienda NO encontrada en cache');
             }
             
-            // Recargar tiendas para actualizar stats
+            // Recargar tiendas
+            console.log('🔍 Recargando lista de tiendas...');
             await cargarTiendas();
+            console.log('✅ Lista recargada');
         } else {
-            showNotification('Error al cambiar estado', 'error');
+            console.error('❌ Error del servidor:', result.error || 'Sin mensaje');
+            showNotification(result.error || 'Error al cambiar estado', 'error');
         }
     } catch (error) {
-        console.error('Error al cambiar estado de tienda:', error);
+        console.error('❌ ERROR CAPTURADO:');
+        console.error('Tipo:', error.name);
+        console.error('Mensaje:', error.message);
+        console.error('Stack:', error.stack);
         showNotification('Error al cambiar estado', 'error');
     }
+    
+    console.log('='.repeat(60));
+    console.log('🔍 toggleTienda TERMINÓ');
+    console.log('='.repeat(60));
 }
 
 /**
