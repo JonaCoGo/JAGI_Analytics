@@ -241,9 +241,11 @@ def get_reabastecimiento_avanzado(
     df["observacion"] = df.apply(
         lambda r: "OK"
         if r["cantidad_a_despachar"] == 0
-        else "REABASTECER"
-        if r["cantidad_asignada_real"] > 0
-        else "COMPRA",
+        else "COMPRA"
+        if r["cantidad_asignada_real"] == 0
+        else "PARCIAL"
+        if r["cantidad_asignada_real"] < r["cantidad_a_despachar"]
+        else "REABASTECER",
         axis=1
     )
 
