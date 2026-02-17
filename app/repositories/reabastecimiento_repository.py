@@ -40,6 +40,7 @@ def fetch_config_tiendas(conn):
         """
         SELECT raw_name, clean_name, region, fija, tipo_tienda
         FROM config_tiendas
+        WHERE COALESCE(activa, 1) = 1
         """,
         conn
     )
@@ -79,6 +80,7 @@ def fetch_base_reabastecimiento(conn, fecha_col, fecha_desde):
             FROM codigos_excluidos
             WHERE cod_barras IS NOT NULL
         )
+        AND COALESCE(ct.activa, 1) = 1
     ),
     ventas_reab AS (
         SELECT 
@@ -89,6 +91,7 @@ def fetch_base_reabastecimiento(conn, fecha_col, fecha_desde):
         LEFT JOIN config_tiendas ct
             ON h.d_almacen = ct.raw_name
         WHERE {fecha_col} >= {fecha_desde}
+        AND COALESCE(ct.activa, 1) = 1
         GROUP BY h.c_barra, tienda
     )
     SELECT 
@@ -121,6 +124,7 @@ def fetch_ventas_expansion(conn, fecha_col, fecha_desde):
     LEFT JOIN config_tiendas ct
         ON h.d_almacen = ct.raw_name
     WHERE {fecha_col} >= {fecha_desde}
+    AND COALESCE(ct.activa, 1) = 1
     GROUP BY h.c_barra, tienda
     """
     return pd.read_sql(query, conn)

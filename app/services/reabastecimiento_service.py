@@ -100,6 +100,7 @@ def get_reabastecimiento_avanzado(
             LEFT JOIN inventario_bodega_raw b ON s.c_barra = b.c_barra
             LEFT JOIN config_tiendas ct ON s.d_almacen = ct.raw_name
             WHERE s.c_barra NOT IN (SELECT cod_barras FROM codigos_excluidos)
+                AND (ct.activa IS NULL OR COALESCE(ct.activa, 1) = 1)
         ),
         ventas_reab AS (
             SELECT 
@@ -138,6 +139,7 @@ def get_reabastecimiento_avanzado(
         FROM ventas_historico_raw h
         LEFT JOIN config_tiendas ct ON h.d_almacen = ct.raw_name
         WHERE {fecha_col} >= {fecha_desde_exp}
+            AND (ct.activa IS NULL OR COALESCE(ct.activa, 1) = 1)
         GROUP BY h.c_barra, tienda
         """
         df_exp = pd.read_sql(query_exp, conn)

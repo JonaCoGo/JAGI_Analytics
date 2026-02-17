@@ -17,7 +17,9 @@ def fetch_configuracion(conn):
     )["cod_barras"].dropna().astype(str).tolist()
 
     tiendas = pd.read_sql(
-        "SELECT raw_name, clean_name, region, fija, tipo_tienda FROM config_tiendas",
+        """SELECT raw_name, clean_name, region, fija, tipo_tienda
+        FROM config_tiendas
+        WHERE COALESCE(activa, 1) = 1""",
         conn
     )
 
@@ -35,6 +37,7 @@ def fetch_ventas(conn, fecha_col, fecha_desde):
         FROM ventas_historico_raw h
         LEFT JOIN config_tiendas ct ON h.d_almacen = ct.raw_name
         WHERE {fecha_col} >= {fecha_desde}
+        AND COALESCE(ct.activa, 1) = 1
         GROUP BY tienda_clean, h.c_barra, h.d_marca
     """, conn)
 
@@ -49,4 +52,5 @@ def fetch_existencias(conn):
             s.saldo_disponible AS stock_actual
         FROM ventas_saldos_raw s
         LEFT JOIN config_tiendas ct ON s.d_almacen = ct.raw_name
+        WHERE COALESCE(ct.activa, 1) = 1
     """, conn)
