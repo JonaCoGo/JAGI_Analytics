@@ -1253,7 +1253,7 @@ function renderTablaTiendas(tiendas) {
                         
                         <!-- NUEVO: Botón Toggle -->
                         <button 
-                            onclick='toggleTienda("${tienda.clean_name || tienda.raw_name}")'
+                            onclick='cambiarEstadoTienda("${tienda.clean_name || tienda.raw_name}")'
                             class="px-2 py-1 rounded text-xs font-medium ${
                                 activa 
                                 ? 'bg-orange-500 hover:bg-orange-600 text-white' 
@@ -1422,7 +1422,7 @@ async function eliminarTienda(rawName) {
 /**
  * Activa/desactiva una tienda individual
  */
-async function toggleTienda(nombreTienda) {
+async function cambiarEstadoTienda(nombreTienda) {
     // DEBUG 1: Verificar que la función se llama
     console.log('='.repeat(60));
     console.log('🔍 DEBUG - toggleTienda llamada');
