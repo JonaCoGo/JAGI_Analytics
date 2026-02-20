@@ -1,90 +1,99 @@
-# scripts/create_schema.py
+# scripts/create_BD.py
 
 import sqlite3
 import os
-from pathlib import Path
 
-# --- CONFIGURACIÓN DE RUTAS ---
-# Forzamos la creación en el disco C para mantener consistencia en JAGI Analytics
-BASE_DIR = Path("C:/JAGI_Analytics")
-DB_PATH = BASE_DIR / "data" / "jagi_mahalo.db"
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+DB_PATH = os.path.join(DATA_DIR, "jagi.db")
 
-def setup_database():
-    """Crea la base de datos con todas las tablas y columnas desde cero."""
-    
-    # Crear carpetas si no existen
-    if not DB_PATH.parent.exists():
-        print(f"📁 Creando directorio de datos: {DB_PATH.parent}")
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"🚀 Creando base de datos en: {DB_PATH}")
+def create_tables(cursor):
+    cursor.executescript("""
+    CREATE TABLE IF NOT EXISTS map_marcas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre_marca TEXT NOT NULL,
+        categoria TEXT NOT NULL,
+        es_manual INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS map_paises (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre_pais TEXT NOT NULL,
+        continente TEXT NOT NULL,
+        es_manual INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS map_productos (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre_producto TEXT NOT NULL,
+        categoria TEXT NOT NULL,
+        es_manual INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS raw_mahalo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fecha TEXT,
+        marca TEXT,
+        producto TEXT,
+        pais TEXT,
+        ventas REAL
+    );
+    """)
+
+
+def insert_config_data(cursor):
+    marcas = [
+        ("Royal Canin", "Pet Food", 0),
+        ("Purina", "Pet Food", 0),
+        ("Hill's", "Pet Food", 0)
+    ]
+
+    paises = [
+        ("Colombia", "América", 0),
+        ("México", "América", 0),
+        ("Chile", "América", 0)
+    ]
+
+    productos = [
+        ("Adult Dog", "Perros", 0),
+        ("Adult Cat", "Gatos", 0)
+    ]
+
+    cursor.executemany(
+        "INSERT INTO map_marcas (nombre_marca, categoria, es_manual) VALUES (?, ?, ?)",
+        marcas
+    )
+
+    cursor.executemany(
+        "INSERT INTO map_paises (nombre_pais, continente, es_manual) VALUES (?, ?, ?)",
+        paises
+    )
+
+    cursor.executemany(
+        "INSERT INTO map_productos (nombre_producto, categoria, es_manual) VALUES (?, ?, ?)",
+        productos
+    )
+
+
+def main():
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+    if os.path.exists(DB_PATH):
+        print("La base de datos ya existe.")
+        return
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
-    try:
-        # --- 1. TABLAS DE CONFIGURACIÓN ---
-        cursor.execute("CREATE TABLE IF NOT EXISTS codigos_excluidos (cod_barras TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS referencias_fijas (cod_barras TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS marcas_multimarca (marca TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS map_marcas (raw_name TEXT, clean_name TEXT);")
-        cursor.execute("CREATE TABLE IF NOT EXISTS stock_minimo_config (tipo TEXT, cantidad INTEGER);")
-        
-        # Aquí creamos la tabla con 'activa' incluida desde el nacimiento
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS config_tiendas (
-                raw_name TEXT,
-                clean_name TEXT,
-                region TEXT,
-                fija INTEGER,
-                tipo_tienda TEXT,
-                activa INTEGER DEFAULT 1
-            );
-        """)
+    create_tables(cursor)
+    insert_config_data(cursor)
 
-        # --- 2. TABLAS DE DATOS (RAW) ---
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS inventario_bodega_raw (
-                c_almacen INTEGER, d_almacen TEXT, c_referencia INTEGER, d_referencia_prov TEXT,
-                d_referencia TEXT, c_barra TEXT, c_talla TEXT, d_talla TEXT,
-                c_color_proveedor TEXT, d_color_proveedor TEXT, c_proveedor INTEGER,
-                d_proveedor TEXT, c_linea INTEGER, d_linea TEXT, c_categoria INTEGER,
-                d_categoria TEXT, c_subcategoria INTEGER, d_subcategoria TEXT,
-                c_segmento INTEGER, d_segmento TEXT, c_sector INTEGER, d_sector TEXT,
-                c_marca INTEGER, d_marca TEXT, c_coleccion INTEGER, d_coleccion TEXT,
-                costo_uni INTEGER, precio_venta_un INTEGER, stock_min INTEGER,
-                stock_max INTEGER, saldo INTEGER, saldo_transito INTEGER,
-                pr_venta INTEGER, saldo_separados INTEGER, saldo_disponibles INTEGER, pr_costo INTEGER
-            );
-        """)
+    conn.commit()
+    conn.close()
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ventas_historico_raw (
-                c_almacen REAL, d_almacen TEXT, c_producto REAL, d_referencia_prov TEXT,
-                d_producto TEXT, c_barra TEXT, c_talla TEXT, d_talla TEXT,
-                c_color_proveedor TEXT, d_color_proveedor TEXT, c_marca REAL,
-                d_marca TEXT, c_coleccion REAL, d_coleccion TEXT, f_sistema TEXT,
-                vr_bruto REAL, vr_neto REAL, vr_descuento REAL, vr_descuento_por REAL,
-                vr_iva REAL, cn_venta REAL
-            );
-        """)
+    print("Base de datos creada correctamente en:", DB_PATH)
 
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS ventas_saldos_raw (
-                c_almacen INTEGER, d_almacen TEXT, c_producto INTEGER, d_referencia_prov TEXT,
-                d_producto TEXT, c_barra TEXT, c_talla TEXT, d_talla TEXT,
-                c_color_proveedor TEXT, d_color_proveedor TEXT, c_marca INTEGER,
-                d_marca TEXT, c_coleccion INTEGER, d_coleccion TEXT, total_ventas INTEGER
-            );
-        """)
-
-        conn.commit()
-        print("✅ Base de datos creada exitosamente con todas las columnas.")
-
-    except Exception as e:
-        print(f"❌ Error al crear la base de datos: {e}")
-        conn.rollback()
-    finally:
-        conn.close()
 
 if __name__ == "__main__":
-    setup_database()
+    main()

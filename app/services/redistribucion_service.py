@@ -53,7 +53,7 @@ def get_redistribucion_regional(dias=30, ventas_min=1, tienda_origen=None):
             return cfg_map.get("jgl", 3)
         if "JGM" in c or "JGM" in m:
             return cfg_map.get("jgm", 3)
-        return cfg_map.get("general", 4)
+        return cfg_map.get("default", cfg_map.get("general", 4))
 
     existencias["stock_minimo"] = existencias.apply(
         lambda r: stock_min(r["c_barra"], r["d_marca"]), axis=1

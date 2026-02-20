@@ -1,7 +1,3 @@
-# app/services/analisis_marca_service.py
-
-import os
-import sqlite3
 import pandas as pd
 
 from app.repositories.analisis_marca_repository import (
@@ -10,20 +6,17 @@ from app.repositories.analisis_marca_repository import (
     get_tiendas_configuradas,
     get_stock_por_barra,
 )
-
-from app.database import DATA_DIR
+from app.database import get_connection
 from app.utils.text import _norm
+
 
 def get_analisis_marca(marca: str) -> dict:
     """
-    Lógica de negocio para el análisis completo de una marca.
+    Logica de negocio para el analisis completo de una marca.
     Devuelve la estructura exacta que espera el frontend.
     """
 
-    db_path = os.path.join(DATA_DIR, "jagi_mahalo.db")
-    conn = sqlite3.connect(db_path)
-
-    try:
+    with get_connection() as conn:
         marca_norm = marca.upper().strip()
 
         # 1. TOP 10 productos
@@ -69,7 +62,7 @@ def get_analisis_marca(marca: str) -> dict:
                 "potencial_faltante": len(tiendas_sin_producto),
             })
 
-        # 4. Análisis por tienda
+        # 4. Analisis por tienda
         analisis_tiendas = []
         for tienda in tiendas_dict.values():
             productos_con = [p for p in top10_detalles if tienda in p["tiendas_con_producto"]]
@@ -101,6 +94,3 @@ def get_analisis_marca(marca: str) -> dict:
                 f"Se detectaron {len(tiendas_con_top10)} tiendas con el top 10."
             ],
         }
-
-    finally:
-        conn.close()

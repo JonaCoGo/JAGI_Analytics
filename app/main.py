@@ -70,6 +70,9 @@ app.add_middleware(
 # Ruta a la BD usando la variable que creamos en database.py
 DB_PATH = os.path.join(DATA_DIR, "jagi_mahalo.db")
 
+REPORTS_DIR = os.path.join(DATA_DIR, "reports")
+os.makedirs(REPORTS_DIR, exist_ok=True)
+
 # ---------------------- MODELOS Pydantic ----------------------
 
 class RedistribucionParams(BaseModel):
@@ -240,39 +243,44 @@ async def actualizar_inventario_fisico(file: UploadFile = File(...)):
         if "producto_id" not in df.columns or "cantidad_fisica" not in df.columns:
             raise HTTPException(status_code=400, detail="Faltan columnas requeridas: producto_id, cantidad_fisica")
 
-        with get_connection() as conn:
-            cursor = conn.connection.cursor()
-
         actualizados = 0
         no_encontrados = []
 
-        for _, row in df.iterrows():
-            c_barra = str(row["producto_id"]).strip()
-            cantidad = float(row["cantidad_fisica"]) if pd.notna(row["cantidad_fisica"]) else 0
-            
-            # Obtener el costo unitario actual antes de actualizar
-            cursor.execute("SELECT costo_uni FROM inventario_bodega_raw WHERE c_barra = ?", (c_barra,))
-            row_costo = cursor.fetchone()
-            
-            if row_costo and row_costo[0] is not None:
-                costo_unitario = float(row_costo[0])
-                nuevo_pr_costo = cantidad * costo_unitario
+        with get_connection as conn:
+            for _, row in df.iterrows():
+                c_barra = str(row["producto_id"]).strip()
+                cantidad = float(row["cantidad_fisica"]) if pd.notna(row["cantidad_fisica"]) else 0
                 
-                # Actualizar cantidad y recalcular pr_costo
-                cursor.execute("""
-                    UPDATE inventario_bodega_raw
-                    SET saldo_disponibles = ?, saldo = ?, pr_costo = ?
-                    WHERE c_barra = ?;
-                """, (cantidad, cantidad, nuevo_pr_costo, c_barra))
+                # Obtener el costo unitario actual antes de actualizar
+                result = conn.execute(
+                    text("SELECT costo_uni FROM inventario_bodega_raw WHERE c_barra = :c"),
+                    {"c": c_barra}
+                ).fetchone()
                 
-                actualizados += 1
-            else:
-                no_encontrados.append(c_barra)
-
-        conn.commit()
+                if result and result[0] is not None:
+                    costo_unitario = float(result[0])
+                    nuevo_pr_costo = cantidad * costo_unitario
+                    
+                    conn.execute(
+                        text("""
+                            UPDATE inventario_bodega_raw
+                            SET saldo_disponibles = :saldo_disp, saldo = :saldo, pr_costo = pr
+                            WHERE c_barra = :c
+                        """),
+                        {"saldo_disp": cantidad, "saldo": cantidad, "pr": nuevo_pr_costo, "c": c_barra}
+                    )
+                    actualizados += 1
+                else:
+                    no_encontrados.append(c_barra)
+            
+            conn.commit()
 
         if no_encontrados:
-            pd.DataFrame({"producto_id": no_encontrados}).to_excel("codigos_no_encontrados.xlsx", index=False)
+            reports_dir = os.path.join(DATA_DIR, "reports")
+            os.makedirs(reports_dir, exist_ok=True)
+            pd.DataFrame({"producto_id": no_encontrados}).to_excel(
+                os.path.join(reports_dir, "codigos_no_encontrados.xlsx"), index=False
+            )
 
         return {
             "message": "Inventario actualizado exitosamente",
@@ -461,8 +469,7 @@ async def generar_reabastecimiento(params: ReabastecimientoExportParams):
                 detail="No hay datos para exportar con los filtros aplicados"
             )
         
-        archivo = "reabastecimiento_jagi.xlsx"
-        # Determinar tipo de formato según parámetros
+        archivo = os.path.join(REPORTS_DIR, "reabastecimiento_jagi.xlsx")
         tipo_formato = "general"
         if hasattr(params, 'tipo_formato') and params.tipo_formato:
             tipo_formato = params.tipo_formato
@@ -503,9 +510,11 @@ async def obtener_columnas_reabastecimiento(
             ]
         
         # Generar solo una muestra pequeña para obtener columnas
-        df = get_reabastecimiento_avanzado(
-            **motor_params.model_dump(exclude_none=True)
-        )
+        motor_params_dict = params.model_dump(exclude_none=True)
+        if nuevos_codigos_dict is not None:
+            motor_params_dict["nuevos_codigos"] = nuevos_codigos_dict
+
+        df = get_reabastecimiento_avanzado(**motor_params_dict)
         
         if "region" in df.columns:
             df = df.drop(columns=["region"])
