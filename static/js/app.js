@@ -49,7 +49,7 @@ const PERFILES_EXPORTACION = {
             "c_barra",
             "stock_bodega",
             "stock_bodega_restante",
-            "cantidad_asignada",
+            "cantidad_a_despachar",
             "observacion"
         ],
         filtros: {
@@ -529,14 +529,30 @@ function renderizarBotonesPaginacion(totalRegistros) {
 // ==========================================
 async function cargarCSV() {
     const files = document.getElementById('csvFiles').files;
-    
+
     if (files.length !== 3) {
-        showNotification('Debes seleccionar los 3 archivos CSV', 'error');
+        showNotification('Debes seleccionar exactamente los 3 archivos CSV', 'error');
         return;
     }
 
+    const nombresEsperados = CONFIG.ARCHIVOS_CSV;
+    const nombresRecibidos = Array.from(files).map(f => f.name);
+
+    const faltantes = nombresEsperados.filter(n => !nombresRecibidos.includes(n));
+    if (faltantes.length > 0) {
+        showNotification(
+            `Archivos incorrectos. Faltan: ${faltantes.join(', ')}`,
+            'error'
+        );
+        return;
+    }
+
+    const archivosOrdenados = nombresEsperados.map(nombre =>
+        Array.from(files).find(f => f.name === nombre)
+    );
+
     const formData = new FormData();
-    for (let file of files) {
+    for (let file of archivosOrdenados) {
         formData.append('files', file);
     }
 
