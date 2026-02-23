@@ -246,7 +246,7 @@ async def actualizar_inventario_fisico(file: UploadFile = File(...)):
         actualizados = 0
         no_encontrados = []
 
-        with get_connection as conn:
+        with get_connection() as conn:
             for _, row in df.iterrows():
                 c_barra = str(row["producto_id"]).strip()
                 cantidad = float(row["cantidad_fisica"]) if pd.notna(row["cantidad_fisica"]) else 0
@@ -264,7 +264,7 @@ async def actualizar_inventario_fisico(file: UploadFile = File(...)):
                     conn.execute(
                         text("""
                             UPDATE inventario_bodega_raw
-                            SET saldo_disponibles = :saldo_disp, saldo = :saldo, pr_costo = pr
+                            SET saldo_disponibles = :saldo_disp, saldo = :saldo, pr_costo = :pr
                             WHERE c_barra = :c
                         """),
                         {"saldo_disp": cantidad, "saldo": cantidad, "pr": nuevo_pr_costo, "c": c_barra}
@@ -665,7 +665,7 @@ async def generar_redistribucion(params: RedistribucionParams):
         )
         if df.empty:
             raise HTTPException(status_code=404, detail="No hay redistribuciones sugeridas")
-        archivo = "redistribucion_regional.xlsx"
+        archivo = os.path.join(REPORTS_DIR, "redistribucion_regional.xlsx")
         exportar_excel_formateado(df, archivo, f"Redistribución {params.dias} días", "general")
         return FileResponse(archivo, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=archivo)
     except Exception as e:
@@ -721,11 +721,11 @@ async def exportar_preview_personalizado(params: ExportarPreviewParams):
         
         # Generar nombre de archivo seguro
         nombre_archivo = params.nombre_reporte.replace(' ', '_').lower()
-        archivo = f"{nombre_archivo}_personalizado.xlsx"
+        archivo = os.path.join(REPORTS_DIR, f"{nombre_archivo}_personalizado.xlsx")
         
         # Determinar tipo de formato
         tipo_formato = getattr(params, 'tipo_formato', 'general')
-        exportar_excel_formateado(df, archivo, params.nombre_reporte, tipo_formato, "general")
+        exportar_excel_formateado(df, archivo, params.nombre_reporte, tipo_formato)
         
         return FileResponse(
             archivo, 
@@ -766,8 +766,10 @@ async def obtener_referencias_fijas():
 async def agregar_referencia_fija(codigo: dict):
     try:
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
-            cursor.execute("INSERT INTO referencias_fijas (cod_barras) VALUES (?)", (codigo.get('codigo'),))
+            conn.execute(
+                text("INSERT INTO referencias_fijas (cod_barras) VALUES (:c)"),
+                {"c": codigo.get('codigo')}
+            )
             conn.commit()
         return JSONResponse({"success": True, "message": "Referencia agregada"})
     except Exception as e:
@@ -779,12 +781,14 @@ async def eliminar_referencia_fija(codigo: str):
         codigo = unquote(codigo)
         logging.info(f"🗑️ Eliminando referencia fija: {codigo}")
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
-            cursor.execute("DELETE FROM referencias_fijas WHERE cod_barras = ?", (codigo,))
-            filas = cursor.rowcount
+            result = conn.execute(
+                text("DELETE FROM referencias_fijas WHERE cod_barras = :c"),
+                {"c": codigo}
+            )
+            filas = result.rowcount
             conn.commit()
             if filas == 0:
-                return JSONResponse({"success": False, "error": "Código no encontrado"}, status_code=404)
+                return JSONResponse({"success": False, "error": "Codigo no encontrado"}, status_code=404)
         return JSONResponse({"success": True, "message": f"Referencia {codigo} eliminada"})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
@@ -802,10 +806,12 @@ async def obtener_codigos_excluidos():
 async def agregar_codigo_excluido(codigo: dict):
     try:
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
-            cursor.execute("INSERT INTO codigos_excluidos (cod_barras) VALUES (?)", (codigo.get('codigo'),))
+            conn.execute(
+                text("INSERT INTO codigos_excluidos (cod_barras) VALUES (:c)"),
+                {"c": codigo.get('codigo')}
+            )
             conn.commit()
-        return JSONResponse({"success": True, "message": "Código excluido agregado"})
+        return JSONResponse({"success": True, "message": "Codigo excluido agregado"})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
 
@@ -815,13 +821,15 @@ async def eliminar_codigo_excluido(codigo: str):
         codigo = unquote(codigo)
         logging.info(f"🗑️ Eliminando código excluido: {codigo}")
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
-            cursor.execute("DELETE FROM codigos_excluidos WHERE cod_barras = ?", (codigo,))
-            filas = cursor.rowcount
+            result = conn.execute(
+                text("DELETE FROM codigos_excluidos WHERE cod_barras = :c"),
+                {"c": codigo}
+            )
+            filas = result.rowcount
             conn.commit()
             if filas == 0:
-                return JSONResponse({"success": False, "error": "Código no encontrado"}, status_code=404)
-        return JSONResponse({"success": True, "message": "Código eliminado"})
+                return JSONResponse({"success": False, "error": "Codigo no encontrado"}, status_code=404)
+        return JSONResponse({"success": True, "message": "Codigo eliminado"})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
 
@@ -849,11 +857,13 @@ async def actualizar_stock_minimo(config: dict):
     try:
         logging.info(f"📝 Recibiendo configuración stock: {config}")
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
             for tipo, cantidad in config.items():
-                cursor.execute("INSERT OR REPLACE INTO stock_minimo_config (tipo, cantidad) VALUES (?, ?)", (tipo, cantidad))
+                conn.execute(
+                    text("INSERT OR REPLACE INTO stock_minimo_config (tipo, cantidad) VALUES (:tipo, :cantidad)"),
+                    {"tipo": tipo, "cantidad": cantidad}
+                )
             conn.commit()
-        return JSONResponse({"success": True, "message": "Configuración actualizada correctamente"})
+        return JSONResponse({"success": True, "message": "Configuracion actualizada correctamente"})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
 
@@ -861,13 +871,9 @@ async def actualizar_stock_minimo(config: dict):
 async def obtener_stats_tiendas():
     try:
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
-            cursor.execute("SELECT COUNT(*) FROM config_tiendas")
-            total = cursor.fetchone()[0] or 0
-            cursor.execute("SELECT COUNT(*) FROM config_tiendas WHERE fija = 1")
-            fijas = cursor.fetchone()[0] or 0
-            cursor.execute("SELECT COUNT(DISTINCT region) FROM config_tiendas WHERE region IS NOT NULL")
-            regiones = cursor.fetchone()[0] or 0
+            total = conn.execute(text("SELECT COUNT(*) FROM config_tiendas")).scalar() or 0
+            fijas = conn.execute(text("SELECT COUNT(*) FROM config_tiendas WHERE fija = 1")).scalar() or 0
+            regiones = conn.execute(text("SELECT COUNT(DISTINCT region) FROM config_tiendas WHERE region IS NOT NULL")).scalar() or 0
         return JSONResponse({"success": True, "total": total, "fijas": fijas, "regiones": regiones})
     except Exception as e:
         return JSONResponse({"success": False, "error": str(e)})
@@ -877,30 +883,19 @@ async def obtener_estadisticas_dashboard():
     """Devuelve métricas generales para el dashboard principal"""
     try:
         with get_connection() as conn:
-            cursor = conn.connection.cursor()
+            total_productos = conn.execute(
+                text("SELECT COUNT(DISTINCT c_barra) FROM ventas_saldos_raw WHERE c_barra IS NOT NULL")
+            ).scalar() or 0
 
-            # Total de productos únicos
-            cursor.execute("SELECT COUNT(DISTINCT c_barra) FROM ventas_saldos_raw WHERE c_barra IS NOT NULL")
-            total_productos = cursor.fetchone()[0] or 0
+            tiendas = conn.execute(
+                text("SELECT COUNT(DISTINCT d_almacen) FROM ventas_saldos_raw WHERE d_almacen NOT LIKE '%BODEGA%'")
+            ).scalar() or 0
 
-            # Total de tiendas activas (excluyendo bodegas)
-            cursor.execute("""
-                SELECT COUNT(DISTINCT d_almacen)
-                FROM ventas_saldos_raw
-                WHERE d_almacen NOT LIKE '%BODEGA%'
-            """)
-            tiendas = cursor.fetchone()[0] or 0
+            pendientes_reabastecer = conn.execute(
+                text("SELECT COUNT(*) FROM ventas_saldos_raw WHERE saldo_disponible < 5 AND saldo_disponible >= 0")
+            ).scalar() or 0
 
-            # Productos con bajo stock
-            cursor.execute("""
-                SELECT COUNT(*)
-                FROM ventas_saldos_raw
-                WHERE saldo_disponible < 5 AND saldo_disponible >= 0
-            """)
-            pendientes_reabastecer = cursor.fetchone()[0] or 0
-
-            # Productos con sobrestock y sin ventas recientes
-            cursor.execute("""
+            redistribuciones = conn.execute(text("""
                 SELECT COUNT(DISTINCT s.c_barra)
                 FROM ventas_saldos_raw s
                 WHERE s.saldo_disponible > 10
@@ -910,8 +905,7 @@ async def obtener_estadisticas_dashboard():
                     WHERE DATE(substr(f_sistema,7,4)||'-'||substr(f_sistema,4,2)||'-'||substr(f_sistema,1,2))
                     >= DATE('now', '-30 days')
                 )
-            """)
-            redistribuciones = cursor.fetchone()[0] or 0
+            """)).scalar() or 0
 
         return {
             "success": True,
@@ -1402,7 +1396,7 @@ async def generar_existencias(params: ExistenciasParams):
                 if df.empty:
                     raise HTTPException(status_code=404, detail="No hay datos con los filtros aplicados")
                 
-                archivo = "existencias_detalle.xlsx"
+                archivo = os.path.join(REPORTS_DIR, "existencias_detalle.xlsx")
                 exportar_excel_formateado(df, archivo, f"Existencias - {len(df)} productos", "general")
         return FileResponse(archivo, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=archivo)
             
@@ -1530,7 +1524,7 @@ async def generar_faltantes(params: FaltantesParams):
                 if df.empty:
                     raise HTTPException(status_code=404, detail="No hay faltantes con los filtros aplicados")
                 
-                archivo = "faltantes_detalle.xlsx"
+                archivo = os.path.join(REPORTS_DIR, "faltantes_detalle.xlsx")
                 exportar_excel_formateado(df, archivo, f"Faltantes - {len(df)} productos", "general")
         return FileResponse(archivo, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=archivo)
             
