@@ -1,6 +1,6 @@
 @echo off
 :: Configuramos la ruta completa del archivo
-set "PAGINA_WEB=C:\JAGI_Analytics\templates\index.html"
+set "PAGINA_WEB=C:\JAGI Industry\JAGI_Analytics\templates\index.html"
 
 echo [SISTEMA] Iniciando servidor y cargando interfaz...
 

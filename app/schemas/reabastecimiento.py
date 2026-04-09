@@ -124,8 +124,8 @@ class ReabastecimientoMotorParams(BaseModel):
     Puede usarse desde API, jobs, scripts o tests.
     """
 
-    dias_reab: int = Field(10, ge=1, le=90)
-    dias_exp: int = Field(60, ge=1, le=180)
+    dias_reab: int = Field(10, ge=1, le=180)
+    dias_exp: int = Field(60, ge=1, le=360)
 
     ventas_min_exp: int = Field(
         3,
